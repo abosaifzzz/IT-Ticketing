@@ -1,0 +1,60 @@
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@500;600;700;800&family=Tajawal:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Tajawal", "Segoe UI", sans-serif;
+  --font-display: "Cairo", "Tajawal", sans-serif;
+  --color-primary-50: #f5f2fa; --color-primary-100: #ebe5f5; --color-primary-200: #d8cdec;
+  --color-primary-300: #bca9dc; --color-primary-400: #9b7fc7; --color-primary-500: #7d60ae;
+  --color-primary-600: #5e4994; --color-primary-700: #4f3c7e; --color-primary-800: #423367; --color-primary-900: #382c55;
+  --color-accent-500: #13a8d4; --color-surface: #ffffff; --color-canvas: #f6f7fb;
+  --color-border: #e5e7eb; --color-ink: #18212f; --color-muted: #697386;
+  --shadow-panel: 0 8px 30px rgba(50, 43, 70, 0.06);
+}
+:root {
+  font-family: var(--font-sans); color: var(--color-ink); background: var(--color-canvas);
+  font-synthesis: none; text-rendering: optimizeLegibility;
+  --state-success: #16855b; --state-success-soft: #e9f8f1; --state-warning: #b66a0a;
+  --state-warning-soft: #fff7e7; --state-danger: #c33b4a; --state-danger-soft: #fff0f2;
+  --state-info: #167ba3; --state-info-soft: #eaf8fc;
+}
+.dark {
+  --color-surface: #211d2a; --color-canvas: #17141e; --color-border: #423a50;
+  --color-ink: #f7f3fc; --color-muted: #c6bdd2;
+  --shadow-panel: 0 8px 30px rgba(8, 6, 15, 0.22);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { direction: rtl; background: var(--color-canvas); }
+body { margin: 0; min-width: 320px; min-height: 100vh; background: var(--color-canvas); }
+h1, h2, h3, h4, h5, h6 { font-family: var(--font-display); }
+button, input, textarea, select { font: inherit; }
+button, a { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, a:focus-visible { outline: 3px solid var(--color-primary-200); outline-offset: 2px; }
+@layer components {
+  .panel { @apply rounded-2xl border border-border bg-surface shadow-panel; }
+  .eyebrow { @apply text-xs font-bold tracking-wide text-primary-600; }
+  .icon-button { @apply grid size-10 shrink-0 place-items-center rounded-xl border border-border bg-surface text-muted transition hover:bg-primary-50 hover:text-ink dark:hover:bg-primary-900/30; }
+  .page-heading { @apply mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between; }
+  .page-heading h1 { @apply text-2xl font-extrabold text-ink sm:text-3xl; }
+  .page-heading p { @apply mt-2 max-w-2xl text-sm leading-7 text-muted; }
+  .content-card { @apply rounded-2xl border border-border bg-surface p-5 shadow-panel sm:p-6; }
+  .metric-grid { @apply grid gap-4 sm:grid-cols-2 xl:grid-cols-4; }
+  .metric-card { @apply rounded-2xl border border-border bg-surface p-5; }
+  .metric-card strong { @apply block text-3xl font-extrabold text-ink; }
+  .metric-card span { @apply mt-2 block text-sm font-bold text-muted; }
+  .form-grid { @apply grid gap-5 md:grid-cols-2; }
+  .field-label { @apply mb-2 block text-sm font-bold text-ink; }
+  .field-input { @apply h-12 w-full rounded-xl border border-border bg-canvas px-4 text-sm text-ink outline-none transition placeholder:text-muted focus:border-primary-500 focus:ring-4 focus:ring-primary-100 dark:focus:ring-primary-900/30; }
+  .dependent-field-disabled { opacity: .55; filter: blur(.8px); cursor: not-allowed; }
+  .dependent-field-disabled .field-input { cursor: not-allowed; }
+  .field-textarea { @apply min-h-32 w-full resize-y rounded-xl border border-border bg-canvas p-4 text-sm text-ink outline-none transition placeholder:text-muted focus:border-primary-500 focus:ring-4 focus:ring-primary-100 dark:focus:ring-primary-900/30; }
+  .table-wrap { @apply overflow-x-auto rounded-2xl border border-border bg-surface; }
+  .data-table { @apply w-full min-w-[720px] text-right text-sm; }
+  .data-table thead { @apply bg-primary-50/70 text-xs text-muted dark:bg-primary-900/20; }
+  .data-table th { @apply px-5 py-3 font-bold; }
+  .data-table td { @apply border-t border-border px-5 py-4 text-muted; }
+  .data-table td:first-child { @apply font-bold text-ink; }
+  .status-pill { @apply inline-flex rounded-full bg-primary-50 px-2.5 py-1 text-xs font-bold text-primary-700 dark:bg-primary-900/30 dark:text-primary-200; }
+}

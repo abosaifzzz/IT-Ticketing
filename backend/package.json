@@ -1,0 +1,47 @@
+{
+  "name": "hospital-it-help-desk-backend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20.18.0"
+  },
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "test": "npm run test:unit",
+    "test:unit": "node --test test/auth.test.js test/management.test.js test/tickets.test.js test/workflow.test.js test/assets.test.js test/notifications.test.js test/reports.test.js test/security.test.js test/roster.test.js test/asset-management.test.js test/simple-assets.test.js test/administration.test.js",
+    "test:integration": "node --test --test-concurrency=1 test/integration/auth.test.js test/integration/management.test.js test/integration/tickets.test.js test/integration/workflow.test.js test/integration/assets.test.js test/integration/notifications.test.js test/integration/reports.test.js test/integration/audit.test.js test/integration/employees.test.js test/integration/asset-management.test.js test/integration/simple-assets.test.js test/integration/administration.test.js",
+    "test:integration:core": "node --test test/integration/auth.test.js test/integration/management.test.js test/integration/tickets.test.js test/integration/workflow.test.js test/integration/reports.test.js",
+    "test:integration:reports": "node --test test/integration/reports.test.js",
+    "test:integration:assets": "node --test test/integration/assets.test.js",
+    "test:integration:notifications": "node --test test/integration/notifications.test.js",
+    "lint": "eslint .",
+    "db:migrate": "node scripts/migrate.js",
+    "user:create": "node scripts/create-user.js",
+    "user:password": "node scripts/set-password.js",
+    "check:fresh": "node scripts/check-fresh.js",
+    "test:integration:employees": "node --test test/integration/employees.test.js",
+    "employees:import": "node scripts/import-employee-roster.js",
+    "test:integration:asset-management": "node --test test/integration/asset-management.test.js",
+    "test:integration:simple-assets": "node --test test/integration/simple-assets.test.js",
+    "test:integration:administration": "node --test test/integration/administration.test.js",
+    "admin:approve": "node scripts/approve-admin-request.js"
+  },
+  "dependencies": {
+    "@node-rs/argon2": "^2.2.2",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^18.0.9",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.2",
+    "fflate": "^0.8.3",
+    "helmet": "^8.3.0",
+    "mysql2": "^3.24.6",
+    "pdfkit": "^0.20.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "globals": "^17.13.0"
+  }
+}

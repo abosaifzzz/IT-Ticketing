@@ -1,0 +1,58 @@
+import { formatTicketReference } from '../../services/tickets/formatTicketReference.js'
+import { authMode } from '../../services/auth/mode'
+import { TechnicianTicketsApi } from './api/TechnicianTicketsApi'
+import { Search, SlidersHorizontal, TicketCheck } from 'lucide-react'
+import { useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { StatusBadge } from '../../components/tickets/StatusBadge'
+import { Button } from '../../components/ui/Button'
+import { mockTicketService } from '../../services/mock/mockTicketService'
+import { mockTechnicianService } from '../../services/mock/mockTechnicianService'
+import { statusLabels, ticketStatuses } from '../../services/mock/statuses'
+import { useAuth } from '../auth/useAuth'
+
+const dateFormatter = new Intl.DateTimeFormat('ar-EG', { day: 'numeric', month: 'short', year: 'numeric' })
+const defaultFilters = { search: '', status: 'all', sort: 'newest' }
+function MockTechnicianTicketsPage() {
+  const { user } = useAuth()
+  const navigate = useNavigate()
+  const [filters, setFilters] = useState(defaultFilters)
+  const [claimError, setClaimError] = useState('')
+  const [, setVersion] = useState(0)
+  const tickets = mockTicketService.queryForManager(filters)
+  const totalTickets = mockTicketService.getAll().length
+  const unassignedTickets = mockTicketService.queryUnassigned()
+  const engineer = mockTechnicianService.getById(user.id)
+  const canClaim = engineer?.active && engineer.available !== false
+  const updateFilter = ({ target }) => setFilters((current) => ({ ...current, [target.name]: target.value }))
+  const claimTicket = (id) => {
+    const claimed = mockTicketService.selfAssign(id, user)
+    if (claimed) navigate(`/technician/tickets/${claimed.id}`)
+    else {
+      setClaimError('تعذر إسناد التذكرة. ربما أسندت بالفعل أو أن حسابك غير متاح للإسناد.')
+      setVersion((version) => version + 1)
+    }
+  }
+
+  return <div className="mx-auto max-w-[1500px]">
+    <div className="page-heading"><div><p className="eyebrow">مساحة العمل</p><h1>جميع التذاكر</h1><p>اطّلع على كل البلاغات. تذاكر الزملاء للعرض فقط، ويمكنك تولي التذاكر غير المسندة.</p></div><span className="status-pill">{totalTickets} تذكرة</span></div>
+    {claimError && <p role="alert" className="content-card mb-4 text-red-700 dark:text-red-300">{claimError}</p>}
+
+    <section className="content-card mb-6" aria-labelledby="unassigned-heading"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 id="unassigned-heading" className="text-lg font-extrabold text-ink">تذاكر غير مسندة</h2><p className="mt-1 text-sm text-muted">يمكنك إسناد تذكرة جديدة إلى نفسك قبل فتح تفاصيلها.</p></div><span className="status-pill">{unassignedTickets.length} تذكرة</span></div>
+      {!canClaim && <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">يجب أن يكون حسابك نشطًا ومتاحًا للإسناد قبل تولي تذكرة جديدة.</p>}
+      {unassignedTickets.length ? <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{unassignedTickets.map((ticket) => <article key={ticket.id} className="rounded-2xl border border-border bg-canvas p-4"><p className="text-xs font-extrabold text-primary-600"><bdi dir="ltr" title={ticket.reference}>{formatTicketReference(ticket)}</bdi></p><h3 className="mt-1 font-extrabold text-ink">{ticket.title}</h3><p className="mt-2 text-sm text-muted">{ticket.reporterName} · {ticket.department}</p><p className="mt-1 text-xs text-muted">{dateFormatter.format(new Date(ticket.createdAt))}</p><Button type="button" className="mt-4 w-full" disabled={!canClaim} onClick={() => claimTicket(ticket.id)} aria-label={`إسناد التذكرة ${ticket.id} إلى نفسي`}>إسناد لنفسي</Button></article>)}</div> : <p className="mt-5 rounded-xl border border-dashed border-border p-5 text-center text-sm text-muted">لا توجد تذاكر جديدة غير مسندة الآن.</p>}
+    </section>
+
+    <section className="content-card mb-6" aria-label="البحث والتصفية"><div className="mb-4 flex items-center gap-2"><SlidersHorizontal size={18} className="text-primary-600" /><h2 className="text-sm font-extrabold text-ink">البحث والتصفية</h2></div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-[1.6fr_1fr_1fr_auto]">
+      <label><span className="field-label">بحث</span><span className="relative block"><Search size={18} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-muted" /><input name="search" value={filters.search} onChange={updateFilter} className="field-input pr-11" placeholder="رقم التذكرة، العطل، الموظف أو القسم" /></span></label>
+      <label><span className="field-label">الحالة</span><select name="status" value={filters.status} onChange={updateFilter} className="field-input"><option value="all">جميع الحالات</option>{ticketStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select></label>
+      <label><span className="field-label">الترتيب</span><select name="sort" value={filters.sort} onChange={updateFilter} className="field-input"><option value="newest">الأحدث إنشاءً</option><option value="oldest">الأقدم إنشاءً</option></select></label>
+      <Button type="button" variant="secondary" onClick={() => setFilters(defaultFilters)} className="self-end">مسح التصفية</Button>
+    </div></section>
+
+    {tickets.length ? <><div className="table-wrap hidden lg:block"><table className="data-table min-w-[1050px]"><thead><tr><th>المرجع</th><th>العطل</th><th>الموظف</th><th>القسم</th><th>المهندس المسؤول</th><th>تاريخ الإنشاء</th><th>الحالة</th><th>الإجراء</th></tr></thead><tbody>{tickets.map((ticket) => <tr key={ticket.id}><td className="!text-primary-600"><bdi dir="ltr" title={ticket.reference}>{formatTicketReference(ticket)}</bdi></td><td className="max-w-xs"><p className="truncate font-bold text-ink">{ticket.title}</p></td><td>{ticket.reporterName}</td><td>{ticket.department}</td><td className="font-bold text-ink">{ticket.assignedTechnician || 'غير مسند'}</td><td>{dateFormatter.format(new Date(ticket.createdAt))}</td><td><StatusBadge status={ticket.status} /></td><td>{ticket.status === 'new' && !ticket.assignedTechnicianId ? <Button type="button" disabled={!canClaim} onClick={() => claimTicket(ticket.id)} aria-label={`إسناد التذكرة ${formatTicketReference(ticket)} إلى نفسي`}>إسناد لنفسي</Button> : <Link className="font-extrabold text-primary-600" to={`/technician/tickets/${ticket.id}`}>فتح التفاصيل</Link>}</td></tr>)}</tbody></table></div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:hidden">{tickets.map((ticket) => <article key={ticket.id} className="content-card"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-extrabold text-primary-600"><bdi dir="ltr" title={ticket.reference}>{formatTicketReference(ticket)}</bdi></p><h2 className="mt-1 font-extrabold text-ink">{ticket.title}</h2></div><StatusBadge status={ticket.status} /></div><dl className="mt-4 grid grid-cols-2 gap-3 text-sm"><div><dt className="text-xs text-muted">الموظف</dt><dd className="mt-1 font-bold text-ink">{ticket.reporterName}</dd></div><div><dt className="text-xs text-muted">القسم</dt><dd className="mt-1 font-bold text-ink">{ticket.department}</dd></div><div><dt className="text-xs text-muted">تاريخ الإنشاء</dt><dd className="mt-1 font-bold text-ink">{dateFormatter.format(new Date(ticket.createdAt))}</dd></div><div><dt className="text-xs text-muted">المهندس المسؤول</dt><dd className="mt-1 font-bold text-ink">{ticket.assignedTechnician || 'غير مسند'}</dd></div></dl>{ticket.status === 'new' && !ticket.assignedTechnicianId ? <Button type="button" className="mt-5 w-full" disabled={!canClaim} onClick={() => claimTicket(ticket.id)} aria-label={`إسناد التذكرة ${formatTicketReference(ticket)} إلى نفسي`}>إسناد لنفسي</Button> : <Button as={Link} to={`/technician/tickets/${ticket.id}`} variant="secondary" className="mt-5 w-full">فتح التفاصيل</Button>}</article>)}</div></> : <section className="rounded-2xl border border-dashed border-border bg-surface p-10 text-center"><TicketCheck className="mx-auto text-primary-300" size={40} /><h2 className="mt-4 text-lg font-extrabold text-ink">{totalTickets ? 'لا توجد نتائج مطابقة' : 'لا توجد تذاكر بعد'}</h2><p className="mt-2 text-sm text-muted">{totalTickets ? 'جرّب تعديل البحث أو خيارات التصفية.' : 'ستظهر البلاغات الجديدة هنا بعد إنشائها.'}</p>{totalTickets > 0 && <Button variant="secondary" onClick={() => setFilters(defaultFilters)} className="mt-5">عرض جميع التذاكر</Button>}</section>}
+  </div>
+}
+
+export function TechnicianTicketsPage(){return authMode === 'api' ? <TechnicianTicketsApi /> : <MockTechnicianTicketsPage />}

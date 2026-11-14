@@ -1,0 +1,18 @@
+import {useEffect,useId,useRef,useState} from 'react'
+import {Button} from '../../components/ui/Button'
+import {useApiQuery} from '../../services/http/useApiQuery'
+import {employeeDirectoryService} from '../../services/employees/employeeDirectoryService'
+
+// One visible field: typing searches, choosing a result supplies the directory ID.
+export function AssetEmployeeSearch({value='',onChange,label='الموظف *',required=false,selectedLabel=''}){
+ const listId=useId(),reported=useRef(value),[text,setText]=useState(selectedLabel||value),[page,setPage]=useState(1),[open,setOpen]=useState(false),[active,setActive]=useState(-1)
+ const query=useApiQuery(`asset-employee:${text}:${page}`,signal=>employeeDirectoryService.list(text,page,signal))
+ const items=query.data?.items??[]
+ useEffect(()=>{if(value!==reported.current){reported.current=value;setText(selectedLabel||value);setPage(1);setOpen(false)}},[value,selectedLabel])
+ const type=next=>{setText(next);setPage(1);setActive(-1);setOpen(true);reported.current='';onChange('',null)}
+ const choose=item=>{reported.current=item.id;setText(item.fullName);setOpen(false);setActive(-1);onChange(item.id,item)}
+ const keyDown=event=>{if(event.key==='Escape'){setOpen(false);return}if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();setOpen(true);setActive(old=>Math.max(0,Math.min(items.length-1,old+(event.key==='ArrowDown'?1:-1))))}if(event.key==='Enter'&&open&&active>=0&&items[active]){event.preventDefault();choose(items[active])}}
+ return <div className="relative"><label><span className="field-label">{label}</span><input className="field-input" role="combobox" aria-autocomplete="list" aria-controls={listId} aria-expanded={open} aria-invalid={Boolean(required&&text&&!value)} autoComplete="off" value={text} placeholder="اكتب اسم الموظف واختر من النتائج" onChange={event=>type(event.target.value)} onFocus={()=>setOpen(true)} onBlur={()=>setOpen(false)} onKeyDown={keyDown}/></label>
+ {open&&<div className="absolute inset-x-0 top-full z-30 mt-2 rounded-xl border border-border bg-surface p-2 shadow-xl"><ul id={listId} role="listbox" aria-label="نتائج البحث عن الموظفين" className="max-h-64 overflow-y-auto">{items.map((item,index)=><li key={item.id} role="option" aria-selected={value===item.id} className={index===active?'rounded-lg bg-primary-50 dark:bg-primary-900/30':''}><button type="button" className="w-full rounded-lg p-3 text-right text-sm text-ink hover:bg-primary-50 dark:hover:bg-primary-900/30" onMouseDown={event=>event.preventDefault()} onClick={()=>choose(item)}><strong className="block">{item.fullName}</strong><span className="text-xs text-muted">{item.departmentName}</span></button></li>)}</ul>{query.status==='loading'&&<p role="status" className="p-3 text-sm text-muted">جارٍ البحث...</p>}{query.error&&<p role="alert" className="p-3 text-sm text-red-700 dark:text-red-300">{query.error.message}</p>}{query.status==='ready'&&!items.length&&<p className="p-3 text-sm text-muted">لا توجد نتائج مطابقة.</p>}<div className="mt-2 flex items-center justify-between gap-2 border-t border-border pt-2"><Button type="button" variant="secondary" disabled={page<=1} onMouseDown={event=>event.preventDefault()} onClick={()=>{setPage(page-1);setActive(-1)}}>السابق</Button><span className="text-xs text-muted">صفحة {page} · {query.data?.total??0} موظف</span><Button type="button" variant="secondary" disabled={page*(query.data?.pageSize??25)>=(query.data?.total??0)} onMouseDown={event=>event.preventDefault()} onClick={()=>{setPage(page+1);setActive(-1)}}>التالي</Button></div></div>}
+ {required&&text&&!value&&<p className="mt-1 text-xs text-muted">اختر الموظف من النتائج لإكمال العهدة.</p>}</div>
+}

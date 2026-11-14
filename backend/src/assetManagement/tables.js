@@ -1,0 +1,26 @@
+export const managementTables = [
+  "am_categories",
+  "am_sequences",
+  "am_locations",
+  "am_workstations",
+  "am_assets",
+  "am_items",
+  "am_balances",
+  "am_operations",
+  "am_replacements",
+  "am_movements",
+  "am_stock_transactions",
+  "am_custody",
+  "am_maintenance",
+  "am_inventory_sessions",
+  "am_inventory_entries",
+  "am_attachments",
+  "am_audit",
+  "am_workstation_history",
+  "am_ticket_links",
+  "am_legacy_mappings",
+  "am_initial_rows",
+  "am_group_memberships",
+  "am_group_components"
+]
+export const appendOnlyTables = ['am_movements','am_stock_transactions','am_replacements','am_audit','am_workstation_history','am_legacy_mappings','am_ticket_links','am_attachments']

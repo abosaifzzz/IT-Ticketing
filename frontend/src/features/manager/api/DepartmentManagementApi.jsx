@@ -1,0 +1,15 @@
+import { useRef, useState } from 'react'
+import { Button } from '../../../components/ui/Button'
+import { managerService as service } from '../../../services/manager/managerService'
+import { useApiQuery } from '../../../services/http/useApiQuery'
+export function DepartmentManagementApi() {
+    const [search, setSearch] = useState(''), [editor, setEditor] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false)
+    const lock = useRef(false), query = useApiQuery(search, signal => service.records('departments', { search }, signal))
+    const save = async (record) => { if (lock.current) return; lock.current = true; setBusy(true); setError(''); try { await service.save('departments', record); setEditor(null); await query.refresh() } catch (failure) { setError(failure.message) } finally { lock.current = false; setBusy(false) } }
+    return <div className="mx-auto max-w-6xl [overflow-wrap:anywhere]"><div className="page-heading"><div><p className="eyebrow">البيانات المرجعية</p><h1>إدارة الأقسام</h1></div><Button disabled={busy} onClick={() => { setEditor({ name: '', isActive: true }); setError('') }}>إضافة قسم</Button></div>
+        <label className="mb-5 block"><span className="field-label">البحث في الأقسام</span><input className="field-input" name="search" value={search} maxLength={200} onChange={event => setSearch(event.target.value)} /></label>
+        {error && <p className="content-card mb-5" role="alert">{error}</p>}
+        {editor && <form className="content-card mb-5" onSubmit={event => { event.preventDefault(); if (editor.name.trim()) save(editor) }}><fieldset disabled={busy}><h2 className="mb-4 font-bold text-ink">{editor.id ? 'تعديل القسم' : 'إضافة قسم'}</h2><label><span className="field-label">اسم القسم</span><input name="name" className="field-input" maxLength={160} value={editor.name} required onChange={event => setEditor({ ...editor, name: event.target.value })} /></label><div className="mt-4 flex gap-3"><Button type="submit" disabled={!editor.name.trim() || busy}>حفظ القسم</Button><Button variant="secondary" type="button" onClick={() => setEditor(null)}>إلغاء</Button></div></fieldset></form>}
+        {query.error ? <section className="content-card"><p role="alert">{query.error.message}</p><Button onClick={() => query.refresh()}>إعادة المحاولة</Button></section> : query.status === 'loading' ? <p className="content-card" role="status">جارٍ تحميل الأقسام...</p> : <div className="grid gap-4 sm:grid-cols-2">{query.data.items.map(record => <article className="content-card" key={record.id}><h2 className="font-bold text-ink">{record.name}</h2><p className="my-3 text-muted">{record.isActive ? 'نشط' : 'معطل'} · {record.ticketCount} تذكرة</p><div className="flex flex-wrap gap-3"><Button variant="secondary" disabled={busy} onClick={() => { setEditor({ ...record }); setError('') }}>تعديل</Button><Button variant="secondary" disabled={busy} onClick={() => save({ id: record.id, isActive: !record.isActive })}>{record.isActive ? 'تعطيل' : 'تفعيل'}</Button></div></article>)}{!query.data.items.length && <p className="content-card">لا توجد أقسام مطابقة.</p>}</div>}
+    </div>
+}

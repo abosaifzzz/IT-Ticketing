@@ -1,0 +1,63 @@
+CREATE TABLE tickets (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY,
+  reporter_account_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  reporter_name VARCHAR(160) NOT NULL,
+  employee_number VARCHAR(80) NOT NULL DEFAULT '',
+  department_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  department_label VARCHAR(160) NOT NULL,
+  category_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  category_label VARCHAR(160) NOT NULL,
+  subcategory_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  subcategory_label VARCHAR(160) NOT NULL,
+  title VARCHAR(200) NOT NULL,
+  description TEXT NOT NULL,
+  source ENUM('portal', 'manual') NOT NULL,
+  created_for ENUM('self', 'other') NULL,
+  requester_type ENUM('employee', 'top_management') NOT NULL,
+  management_position VARCHAR(160) NOT NULL DEFAULT '',
+  created_by_account_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  created_by_name VARCHAR(160) NOT NULL,
+  created_by_role ENUM('employee', 'technician', 'manager') NOT NULL,
+  status ENUM('new', 'assigned', 'in_progress', 'pending', 'resolved', 'closed', 'reopened') NOT NULL DEFAULT 'new',
+  assigned_technician_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  assigned_technician_name VARCHAR(160) NULL,
+  assigned_at DATETIME(3) NULL,
+  assigned_by_manager_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  assigned_by_manager_name VARCHAR(160) NULL,
+  client_request_id VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  request_fingerprint CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  created_at DATETIME(3) NOT NULL,
+  updated_at DATETIME(3) NOT NULL,
+  UNIQUE KEY tickets_creator_request_uq (created_by_account_id, client_request_id),
+  INDEX tickets_reporter_created_idx (reporter_account_id, created_at, id),
+  INDEX tickets_engineer_assigned_idx (assigned_technician_id, assigned_at, id),
+  INDEX tickets_status_created_idx (status, created_at, id),
+  INDEX tickets_created_idx (created_at, id),
+  CONSTRAINT tickets_reporter_fk FOREIGN KEY (reporter_account_id) REFERENCES users(id) ON DELETE RESTRICT,
+  CONSTRAINT tickets_creator_fk FOREIGN KEY (created_by_account_id) REFERENCES users(id) ON DELETE RESTRICT,
+  CONSTRAINT tickets_department_fk FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE RESTRICT,
+  CONSTRAINT tickets_category_fk FOREIGN KEY (category_id) REFERENCES fault_categories(id) ON DELETE RESTRICT,
+  CONSTRAINT tickets_subcategory_fk FOREIGN KEY (subcategory_id) REFERENCES fault_subcategories(id) ON DELETE RESTRICT,
+  CONSTRAINT tickets_engineer_fk FOREIGN KEY (assigned_technician_id) REFERENCES users(id) ON DELETE RESTRICT,
+  CONSTRAINT tickets_assigner_fk FOREIGN KEY (assigned_by_manager_id) REFERENCES users(id) ON DELETE RESTRICT,
+  CONSTRAINT tickets_ownership_ck CHECK (
+    (source = 'portal' AND reporter_account_id IS NOT NULL AND reporter_account_id = created_by_account_id
+      AND created_by_role = 'employee' AND created_for IS NOT NULL AND requester_type = 'employee')
+    OR (source = 'manual' AND reporter_account_id IS NULL AND created_by_role IN ('technician', 'manager') AND created_for IS NULL)
+  )
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE ticket_history (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY,
+  ticket_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  type ENUM('status', 'assignment') NOT NULL,
+  status VARCHAR(24) NOT NULL,
+  actor_account_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  actor_name VARCHAR(160) NOT NULL,
+  actor_role ENUM('employee', 'technician', 'manager') NOT NULL,
+  occurred_at DATETIME(3) NOT NULL,
+  sequence_number SMALLINT NOT NULL,
+  UNIQUE KEY ticket_history_sequence_uq (ticket_id, sequence_number),
+  CONSTRAINT ticket_history_ticket_fk FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE,
+  CONSTRAINT ticket_history_actor_fk FOREIGN KEY (actor_account_id) REFERENCES users(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
