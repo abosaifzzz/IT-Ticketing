@@ -12,7 +12,7 @@ import {createPool} from '../../src/db/pool.js'
 import {createApp} from '../../src/app.js'
 import {createMySqlUserRepository} from '../../src/repositories/mysqlUserRepository.js'
 import {createMySqlSessionRepository} from '../../src/repositories/mysqlSessionRepository.js'
-import {createLocalAccountService} from '../../src/auth/localAccountService.js'
+import {createLocalAccountService} from '../support/accounts.js'
 import {createLocalPasswordProvider} from '../../src/auth/localPasswordProvider.js'
 import {createAuthService,hashSessionToken} from '../../src/auth/authService.js'
 import {hashPassword} from '../../src/auth/passwords.js'
@@ -76,6 +76,19 @@ test('admin authenticates with a short protected cookie session and no role inhe
  assert.equal((await request('/api/auth/login',{role:'anonymous',method:'POST',body:{email:short.email,password:'x'}})).status,401)
  await pool.execute("UPDATE users SET role='employee',is_active=FALSE WHERE id=?",[short.id])
 })
+test('successful repeated Admin confirmations do not exhaust the failed-password limit or block employee reset',async()=>{
+ const actor=await fixture('repeat-confirm','admin');await login('repeatConfirm',actor)
+ for(let i=0;i<7;i++){
+  const response=await api('/reauthenticate',{role:'repeatConfirm',method:'POST',body:{password}})
+  assert.equal(response.status,200);cookies.repeatConfirm=response.headers.get('set-cookie').split(';')[0]
+ }
+ const target=await fixture('repeat-reset');await login('resetEmployee',target)
+ assert.equal((await api('/users/'+target.id+'/reset-temporary-password',{role:'repeatConfirm',method:'POST',body:{}})).status,200)
+ assert.equal((await request('/api/auth/me',{role:'resetEmployee'})).status,401)
+ await login('resetEmployee',target,'123')
+ assert.equal((await (await request('/api/auth/me',{role:'resetEmployee'})).json()).user.mustChangePassword,true)
+})
+
 test('operational roles and anonymous callers are denied every Administration endpoint',async()=>{
  for(const role of ['manager','technician','employee','anonymous'])for(const path of ['/dashboard','/users','/roles','/settings','/audit','/monitoring','/errors','/backups','/backups/status'])assert.equal((await api(path,{role})).status,role==='anonymous'?401:403)
  for(const role of ['manager','technician','employee'])assert.equal((await api('/users',{role,method:'POST',body:{email:'blocked-'+suffix+'@demo.example',fullName:'Fictional blocked',role:'admin'}})).status,403)
@@ -117,22 +130,45 @@ test('role configurations cannot self-grant operations, grant Admin to other rol
  assert.equal((await api('/errors')).status,403)
  assert.equal((await api('/roles/admin/permissions',{method:'PUT',body:{permissions:baseline}})).status,200)
 })
-test('role changes remain pending until protected approval, revoke sessions and cannot reuse requests',async()=>{
+test('Admin role changes apply immediately, revoke sessions and preserve separate permissions',async()=>{
  roleTarget=await fixture('role-target');await login('roleTarget',roleTarget)
  const response=await api('/users/'+roleTarget.id+'/role-change',{method:'POST',body:{role:'manager',reason:'Fictional approved operational appointment'}})
- assert.equal(response.status,202);const pending=(await response.json()).item
- assert.equal((await pool.execute('SELECT role FROM users WHERE id=?',[roleTarget.id]))[0][0].role,'employee')
- assert.equal((await request('/api/reports/summary',{role:'roleTarget'})).status,403)
- await approveAdministrativeRequest(pool,pending.id)
+ assert.equal(response.status,200);assert.equal((await response.json()).item.role,'manager')
+ assert.equal((await pool.execute('SELECT role FROM users WHERE id=?',[roleTarget.id]))[0][0].role,'manager')
  assert.equal((await request('/api/auth/me',{role:'roleTarget'})).status,401)
  await login('roleTarget',roleTarget);assert.equal((await request('/api/reports/summary',{role:'roleTarget'})).status,200)
- await assert.rejects(approveAdministrativeRequest(pool,pending.id),{status:409})
- const promote=await api('/users/'+roleTarget.id+'/role-change',{method:'POST',body:{role:'admin',reason:'Fictional separate administration appointment'}})
- const requestId=(await promote.json()).item.id
- await assert.rejects(approveAdministrativeRequest(pool,requestId,{password:'x'}),{status:400})
- await approveAdministrativeRequest(pool,requestId,{password})
- await login('roleTarget',roleTarget);assert.equal((await api('/users',{role:'roleTarget'})).status,200)
+ assert.equal((await api('/users/'+roleTarget.id+'/role-change',{method:'POST',body:{role:'admin',reason:'Fictional separate administration appointment',adminPassword:'short'}})).status,400)
+ const nextPassword=randomBytes(24).toString('hex')
+ const promote=await api('/users/'+roleTarget.id+'/role-change',{method:'POST',body:{role:'admin',reason:'Fictional separate administration appointment',adminPassword:nextPassword}})
+ assert.equal(promote.status,200);assert.equal((await promote.json()).item.role,'admin')
+ assert.equal((await request('/api/auth/me',{role:'roleTarget'})).status,401)
+ await login('roleTarget',roleTarget,nextPassword);assert.equal((await api('/users',{role:'roleTarget'})).status,200)
  assert.equal((await request('/api/tickets',{role:'roleTarget'})).status,403)
+ const [[audit]]=await pool.execute("SELECT previous_values,new_values FROM admin_audit WHERE entity_id=? AND action='users.role_change' ORDER BY occurred_at DESC LIMIT 1",[roleTarget.id])
+ const before=typeof audit.previous_values==='string'?JSON.parse(audit.previous_values):audit.previous_values
+ const after=typeof audit.new_values==='string'?JSON.parse(audit.new_values):audit.new_values
+ assert.equal(before.role,'manager')
+ assert.equal(after.role,'admin')
+ assert.equal(JSON.stringify(audit).includes(nextPassword),false)
+ const demote=await api('/users/'+roleTarget.id+'/role-change',{method:'POST',body:{role:'engineer',reason:'Fictional return to engineering'}})
+ assert.equal(demote.status,200);assert.equal((await demote.json()).item.role,'technician')
+ assert.equal((await api('/users',{role:'roleTarget'})).status,401)
+ await login('roleTarget',roleTarget,nextPassword)
+ const demoted=await (await request('/api/auth/me',{role:'roleTarget'})).json()
+ assert.equal(demoted.user.role,'technician')
+ assert.equal(demoted.user.mustCompleteProfile,true)
+})
+test('one account save applies identity, activation and role atomically',async()=>{
+ const target=await fixture('combined-save');await login('combinedSave',target)
+ const response=await api('/users/'+target.id,{method:'PATCH',body:{fullName:'Fictional Combined Save',isActive:false,role:'engineer',reason:'Fictional combined update'}})
+ assert.equal(response.status,200)
+ const saved=(await response.json()).item
+ assert.equal(saved.fullName,'Fictional Combined Save')
+ assert.equal(saved.role,'technician')
+ assert.equal(saved.isActive,false)
+ assert.equal((await request('/api/auth/me',{role:'combinedSave'})).status,401)
+ const [[row]]=await pool.execute('SELECT full_name,role,is_active FROM users WHERE id=?',[target.id])
+ assert.equal(row.full_name,'Fictional Combined Save');assert.equal(row.role,'technician');assert.equal(row.is_active,0)
 })
 test('password reset is private, expires, completes once and revokes old sessions without returning secrets',async()=>{
  resetTarget=await fixture('reset-target');await login('resetTarget',resetTarget)
@@ -230,10 +266,7 @@ test('concurrent Admin disabling and role removal cannot eliminate the last acti
   const [[remaining]]=await pool.query("SELECT id FROM users WHERE role='admin' AND is_active=TRUE");assert.ok(remaining)
   const role=remaining.id===one.id?'raceOne':'raceTwo'
   assert.equal((await api('/users/'+remaining.id,{role,method:'PATCH',body:{isActive:false}})).status,409)
-  const loser=remaining.id===one.id?two:one
-  await pool.execute('UPDATE users SET is_active=TRUE WHERE id=?',[loser.id]);await login('lastOther',loser)
-  const change=await api('/users/'+remaining.id+'/role-change',{role:'lastOther',method:'POST',body:{role:'employee',reason:'Fictional protected demotion'}});assert.equal(change.status,202)
-  const id=(await change.json()).item.id;await pool.execute('UPDATE users SET is_active=FALSE WHERE id=?',[loser.id])
-  await assert.rejects(approveAdministrativeRequest(pool,id),{status:409})
+  const remainingRole=remaining.id===one.id?'raceOne':'raceTwo'
+  assert.equal((await api('/users/'+remaining.id+'/role-change',{role:remainingRole,method:'POST',body:{role:'employee',reason:'Fictional self demotion'}})).status,403)
  }finally{for(const row of state)await pool.execute('UPDATE users SET is_active=? WHERE id=?',[row.is_active,row.id])}
 })

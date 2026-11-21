@@ -40,7 +40,7 @@ try {
   for (const { TABLE_NAME: table } of tables) {
     if (table === 'schema_migrations') continue
     await admin.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON \`${database}\`.\`${table}\` TO '${user}'@'127.0.0.1'`)
-    const privileges = table==='admin_audit'||appendOnlyTables.includes(table) ? 'SELECT, INSERT' : ['ticket_history', 'asset_history', 'asset_withdrawals', 'notification_events', 'employee_directory'].includes(table) ? 'SELECT, INSERT' : table === 'auth_sessions' ? 'SELECT, INSERT, UPDATE, DELETE' : 'SELECT, INSERT, UPDATE'
+    const privileges = ['admin_audit','user_roster_imports'].includes(table)||appendOnlyTables.includes(table) ? 'SELECT, INSERT' : ['ticket_history', 'asset_history', 'asset_withdrawals', 'notification_events'].includes(table) ? 'SELECT, INSERT' : ['auth_sessions','user_departments'].includes(table) ? 'SELECT, INSERT, UPDATE, DELETE' : 'SELECT, INSERT, UPDATE'
     await admin.query(`GRANT ${privileges} ON \`${database}\`.\`${table}\` TO '${runtime}'@'127.0.0.1'`)
   }
   const common = `NODE_ENV=test\nAPP_ORIGIN=http://localhost:5173\nDB_HOST=127.0.0.1\nDB_PORT=${server.port}\nDB_NAME=${database}\n`

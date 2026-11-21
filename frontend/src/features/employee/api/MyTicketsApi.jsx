@@ -17,7 +17,7 @@ export function MyTicketsApi() {
  const updateFilter=(event)=>{setFilters((current)=>({...current,[event.target.name]:event.target.value}));setPage(1);setSelectedTicket(null)}
  const resetFilters=()=>{setFilters(defaultFilters);setPage(1);setSelectedTicket(null)}
   return <div className="mx-auto max-w-[1500px]">
-    <div className="page-heading"><div><p className="eyebrow">متابعة الدعم</p><h1>طلباتي</h1><p>جميع الطلبات المرتبطة بحسابك، بما فيها الطلبات المسجلة بالنيابة عن موظف آخر.</p></div><span className="status-pill">{totalTickets} طلب</span></div>
+    <div className="page-heading"><div><p className="eyebrow">متابعة الدعم</p><h1>طلباتي</h1><p>الطلبات المرتبطة بحسابك الحالي فقط.</p></div><span className="status-pill">{totalTickets} طلب</span></div>
 
     <Button type="button" variant="secondary" className="my-4" disabled={query.status === 'loading'} onClick={() => query.refresh(true)}>تحديث الطلبات</Button>
     <section className="content-card mb-6" aria-label="البحث والتصفية">

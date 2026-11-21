@@ -1,3 +1,4 @@
+import {seedFixtureProfiles,clearFixtureProfiles} from '../support/profiles.js'
 import { testEnvironment } from '../support/database.js'
 import assert from 'node:assert/strict'
 import { before, after, test } from 'node:test'
@@ -13,7 +14,7 @@ import { createMySqlReferenceRepository } from '../../src/repositories/mysqlRefe
 import { createMySqlTicketRepository } from '../../src/repositories/mysqlTicketRepository.js'
 import { createMySqlTicketWorkflowRepository } from '../../src/repositories/mysqlTicketWorkflowRepository.js'
 import { createMySqlAssetRepository } from '../../src/repositories/mysqlAssetRepository.js'
-import { createLocalAccountService } from '../../src/auth/localAccountService.js'
+import { createLocalAccountService } from '../support/accounts.js'
 import { createLocalPasswordProvider } from '../../src/auth/localPasswordProvider.js'
 import { createAuthService } from '../../src/auth/authService.js'
 import { createApp } from '../../src/app.js'
@@ -45,6 +46,7 @@ before(async () => {
   }
   department = await createMySqlReferenceRepository(pool, 'departments').save({ name: `قسم أصول خيالي ${suffix}`, isActive: true })
   category = await createMySqlReferenceRepository(pool, 'categories').save({ name: `نوع خيالي ${suffix}`, isActive: true })
+  await seedFixtureProfiles(pool,accounts,[department])
   const authService = createAuthService({ provider: await createLocalPasswordProvider(users), sessions: createMySqlSessionRepository(pool) })
   server = createApp({ authService, assetRepository: createMySqlAssetRepository(pool), ticketRepository: createMySqlTicketRepository(pool),
     ticketWorkflowRepository: createMySqlTicketWorkflowRepository(pool), config: { nodeEnv: 'test', appOrigin: origin } }).listen(0, '127.0.0.1')
@@ -61,6 +63,7 @@ after(async () => {
   try { if (server) await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())) }
   finally {
     if (pool) {
+      await clearFixtureProfiles(pool,accounts)
       try {
         for (const account of Object.values(accounts)) await pool.execute('DELETE FROM asset_withdrawals WHERE engineer_id = ?', [account.id])
         for (const account of Object.values(accounts)) await pool.execute('DELETE FROM tickets WHERE created_by_account_id = ?', [account.id])
@@ -100,7 +103,7 @@ async function createAsset(extra = {}, role = 'engineerA') {
 }
 
 async function ticket(engineer = 'engineerA', assigned = true) {
-  const response = await request('/tickets', { role: 'manager', body: { reporterName: 'موظف خيالي', departmentId: department.id, categoryId: category.id,
+  const response = await request('/tickets', { role: 'manager', body: { reporterUserId:accounts.employee.id,reporterName: 'موظف خيالي', departmentId: department.id, categoryId: category.id,
     title: 'بلاغ أصول خيالي', description: 'تفاصيل خيالية', ...(assigned ? { assignedTechnicianId: accounts[engineer].id } : {}) } })
   assert.equal(response.status, 201)
   return response.data.item

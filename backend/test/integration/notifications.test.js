@@ -1,3 +1,4 @@
+import {seedFixtureProfiles,clearFixtureProfiles} from '../support/profiles.js'
 import { testEnvironment } from '../support/database.js'
 import assert from 'node:assert/strict'
 import { before, after, test } from 'node:test'
@@ -14,7 +15,7 @@ import { createMySqlTicketWorkflowRepository } from '../../src/repositories/mysq
 import { createMySqlNotificationRepository } from '../../src/repositories/mysqlNotificationRepository.js'
 import { createNotificationService } from '../../src/notifications/service.js'
 import { notificationFilters } from '../../src/notifications/validation.js'
-import { createLocalAccountService } from '../../src/auth/localAccountService.js'
+import { createLocalAccountService } from '../support/accounts.js'
 import { createLocalPasswordProvider } from '../../src/auth/localPasswordProvider.js'
 import { createAuthService } from '../../src/auth/authService.js'
 import { ticketInput } from '../../src/tickets/validation.js'
@@ -37,6 +38,7 @@ before(async () => {
   await pool.execute('UPDATE users SET is_available = FALSE WHERE id = ?', [accounts.engineer.id])
   department = await createMySqlReferenceRepository(pool, 'departments').save({ name: `Notification department ${suffix}`, isActive: true })
   category = await createMySqlReferenceRepository(pool, 'categories').save({ name: `Notification category ${suffix}`, isActive: true })
+  await seedFixtureProfiles(pool,accounts,[department])
   service = createNotificationService(); notifications = createMySqlNotificationRepository(pool)
   tickets = createMySqlTicketRepository(pool, { notifications: service }); workflow = createMySqlTicketWorkflowRepository(pool, { notifications: service })
   const authService = createAuthService({ provider: await createLocalPasswordProvider(users), sessions: createMySqlSessionRepository(pool) })
@@ -51,6 +53,7 @@ after(async () => {
   app?.locals.closeNotificationStreams()
   if (server) await new Promise((resolve) => server.close(resolve))
   if (pool) {
+      await clearFixtureProfiles(pool,accounts)
     try {
       for (const account of Object.values(accounts)) await pool.execute('DELETE FROM tickets WHERE created_by_account_id = ?', [account.id])
       if (category) await pool.execute('DELETE FROM fault_categories WHERE id = ?', [category.id])

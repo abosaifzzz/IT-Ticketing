@@ -10,7 +10,7 @@ import { createMySqlUserRepository } from '../../src/repositories/mysqlUserRepos
 import { createMySqlSessionRepository } from '../../src/repositories/mysqlSessionRepository.js'
 import { createMySqlReferenceRepository } from '../../src/repositories/mysqlReferenceRepository.js'
 import { createMySqlItUserRepository } from '../../src/repositories/mysqlItUserRepository.js'
-import { createLocalAccountService } from '../../src/auth/localAccountService.js'
+import { createLocalAccountService } from '../support/accounts.js'
 import { createLocalPasswordProvider } from '../../src/auth/localPasswordProvider.js'
 import { createAuthService } from '../../src/auth/authService.js'
 import { createApp } from '../../src/app.js'

@@ -22,4 +22,4 @@ export function strongAdminPassword(password) {
 export function requireStrongAdminPassword(password) {
  if(!strongAdminPassword(password))throw new ApiError(400,'Administrative passwords require at least 16 characters, without line breaks or surrounding whitespace')
 }
-export const administrativeTables=Object.freeze(['admin_guard','admin_role_permissions','admin_settings','admin_audit','admin_requests','admin_backups'])
+export const administrativeTables=Object.freeze(['admin_guard','admin_role_permissions','admin_settings','admin_audit','admin_requests','admin_backups','user_departments','user_roster_imports'])

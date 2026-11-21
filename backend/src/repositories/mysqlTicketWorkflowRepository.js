@@ -54,6 +54,11 @@ export function createMySqlTicketWorkflowRepository(pool, { notifications } = {}
               assignedByManagerId: changes.assigned_by_manager_id, assignedByManagerName: changes.assigned_by_manager_name,
               assignedByTechnicianId: changes.assigned_by_technician_id, assignedByTechnicianName: changes.assigned_by_technician_name,
             })
+            // An engineer who claims a ticket is starting on it: record the start in the same transaction.
+            if (action === 'claim') {
+              changes.status = 'in_progress'
+              event('status', 'in_progress', null, { previousStatus: status })
+            }
           } else if (action === 'status') {
             changes.status = transition(input.status, ticket.status)
             changes.pending_reason = input.status === 'pending' ? input.text : null
@@ -64,7 +69,7 @@ export function createMySqlTicketWorkflowRepository(pool, { notifications } = {}
               event('status', 'closed', null, { previousStatus: 'resolved' })
             } else event('status', changes.status, input.text ?? null, { previousStatus: ticket.status })
           } else if (action === 'note' || action === 'comment') {
-            if (action === 'note' && !workingStatuses.includes(ticket.status)) throw new ApiError(409, 'حالة البلاغ لا تسمح بإضافة ملاحظات.')
+            if (action === 'note' && ![...workingStatuses, 'resolved', 'closed'].includes(ticket.status)) throw new ApiError(409, 'حالة البلاغ لا تسمح بإضافة ملاحظات.')
             event(action === 'note' ? 'technician_note' : 'comment', ticket.status, input.text, null, input.visibility ?? 'public')
           } else if (action === 'confirm' || action === 'reopen') {
             changes.status = transition(action, ticket.status)

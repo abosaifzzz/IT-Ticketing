@@ -18,7 +18,7 @@ export function createMySqlDashboardRepository(pool) {
         SELECT id, CONCAT('IT', ticket_sequence - 1) AS reference, category_label, department_label, status, created_at,
           LOWER(TRIM(category_label)) COLLATE utf8mb4_bin category_key,
           LOWER(TRIM(department_label)) COLLATE utf8mb4_bin department_key
-        FROM tickets WHERE ${scope.sql}
+        FROM tickets WHERE ${scope.sql} AND requester_type <> 'it_internal'
       ), ranked AS (
         SELECT scoped.*, ROW_NUMBER() OVER (PARTITION BY category_key, department_key ORDER BY created_at DESC, id DESC) rn FROM scoped
       ) SELECT category_key, department_key, MAX(CASE WHEN rn = 1 THEN category_label END) category,

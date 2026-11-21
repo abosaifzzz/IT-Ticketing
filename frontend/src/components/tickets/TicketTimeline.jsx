@@ -4,10 +4,12 @@ import { statusLabels } from '../../services/mock/statuses'
 const baseSteps = ['new', 'assigned', 'in_progress', 'resolved', 'closed']
 const dateFormatter = new Intl.DateTimeFormat('ar-EG', { dateStyle: 'medium', timeStyle: 'short' })
 
-function eventLabel(event) {
+function eventLabel(event, audience) {
+  // Employees read their own actions in the first person.
+  const self = audience === 'employee'
   if (event.type === 'reopened') return 'أُعيد فتح الطلب'
-  if (event.type === 'confirmation') return 'أكد الموظف حل المشكلة'
-  if (event.type === 'comment') return 'أضاف الموظف تعليقًا'
+  if (event.type === 'confirmation') return self ? 'أكدتَ حل المشكلة' : 'أكد الموظف حل المشكلة'
+  if (event.type === 'comment') return self ? 'أضفتَ تعليقًا' : 'أضاف الموظف تعليقًا'
   if (event.type === 'technician_note') return event.visibility === 'internal' ? 'أضاف المهندس ملاحظة داخلية' : 'أضاف المهندس ملاحظة عامة'
   if (event.type === 'assignment') return 'تم تحديث إسناد التذكرة'
   if (event.type === 'asset_withdrawal') return 'تم سحب أصل تقني للتذكرة'
@@ -37,7 +39,7 @@ export function TicketTimeline({ ticket, audience = 'employee' }) {
 
     <h3 className="mt-8 text-base font-extrabold text-ink">سجل النشاط</h3>
     <div className="mt-4 space-y-5 border-r-2 border-primary-200 pr-5">
-      {[...history].reverse().map((event) => <article key={event.id} className="relative"><span className="absolute -right-[1.62rem] top-1 grid size-5 place-items-center rounded-full bg-primary-100 text-primary-600 dark:bg-primary-900 dark:text-primary-200">{event.type === 'comment' ? <MessageCircle size={11} /> : <Check size={11} />}</span><p className="text-sm font-bold text-ink">{eventLabel(event)}</p>{event.note && !(audience === 'employee' && event.type === 'resolution') && <p className="mt-1 text-sm leading-6 text-muted">{event.note}</p>}<time className="mt-1 block text-xs text-muted">{dateFormatter.format(new Date(event.timestamp))}</time></article>)}
+      {[...history].reverse().map((event) => <article key={event.id} className="relative"><span className="absolute -right-[1.62rem] top-1 grid size-5 place-items-center rounded-full bg-primary-100 text-primary-600 dark:bg-primary-900 dark:text-primary-200">{event.type === 'comment' ? <MessageCircle size={11} /> : <Check size={11} />}</span><p className="text-sm font-bold text-ink">{eventLabel(event, audience)}</p>{event.note && !(audience === 'employee' && event.type === 'resolution') && <p className="mt-1 text-sm leading-6 text-muted">{event.note}</p>}<time className="mt-1 block text-xs text-muted">{dateFormatter.format(new Date(event.timestamp))}</time></article>)}
     </div>
   </section>
 }

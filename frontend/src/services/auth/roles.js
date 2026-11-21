@@ -1,4 +1,5 @@
 export const ROLE_DESTINATIONS = Object.freeze({ employee: '/employee', technician: '/technician', manager: '/manager', admin: '/admin' })
+export const requiresAccountSetup = (user) => user?.mustChangePassword === true || user?.mustCompleteProfile === true
 export function routeAccess({ status, user, allowedRoles }) {
   if (status === 'loading') return 'loading'
   if (status === 'error') return 'error'

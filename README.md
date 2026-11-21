@@ -10,7 +10,7 @@ The frontend now uses the new API-backed asset workspace at `/it/assets`: indivi
 
 Ticket references use the permanent server-generated IT0, IT1, IT2 sequence after migration 009. Display the API reference; preserve internal UUIDs for routes, authorization and relationships. Never renumber existing tickets. See [ticket reference documentation](backend/docs/ticket-references.md).
 
-Arabic RTL React/Vite frontend and Node.js/MySQL backend for employee support, engineer work, manager operations, quantity-based inventory, notifications, reports, and independent system administration. The `admin` role has a separate `/admin` portal and no Manager or Engineer operational access; see [administration documentation](backend/docs/administration.md).
+Arabic RTL React/Vite frontend and Node.js/MySQL backend for employee support, engineer work, manager operations, quantity-based inventory, notifications, reports, and independent system administration. The `admin` role has a separate `/admin` portal and no Manager or Engineer operational access. Admins save account identity, profile, activity and role changes together through one audited, atomic update after reauthentication; Admin password recovery remains a protected operator workflow. See [administration documentation](backend/docs/administration.md).
 
 The engineer ticket page shows all support tickets. New, unassigned tickets have a self-assignment action in the table and on their details page; tickets assigned to another engineer remain read-only. Only the assigned engineer can change status, add notes or withdraw stock. The engineer dashboard shows a recent all-tickets feed while its metrics remain scoped to that engineer's own assignments.
 

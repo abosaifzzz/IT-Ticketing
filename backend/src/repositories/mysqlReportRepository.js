@@ -21,7 +21,7 @@ export function createMySqlReportRepository(pool) {
         const [faults] = await connection.query(`SELECT LOWER(TRIM(t.category_label)) COLLATE utf8mb4_bin category_key,
           LOWER(TRIM(t.subcategory_label)) COLLATE utf8mb4_bin subcategory_key,
           MIN(t.category_label COLLATE utf8mb4_bin) category, MIN(t.subcategory_label COLLATE utf8mb4_bin) subcategory, COUNT(*) ticketCount
-          FROM tickets t ${where} GROUP BY category_key, subcategory_key
+          FROM tickets t ${where} ${where ? 'AND' : 'WHERE'} t.requester_type <> 'it_internal' GROUP BY category_key, subcategory_key
           ORDER BY ticketCount DESC, category COLLATE utf8mb4_unicode_ci, subcategory COLLATE utf8mb4_unicode_ci, category_key, subcategory_key LIMIT ?`, [...values, filters.limit])
         // Reporting keys deliberately contain no ownership/account identifiers.
         const [employees] = await connection.query(`WITH filtered AS (
@@ -29,7 +29,7 @@ export function createMySqlReportRepository(pool) {
             (CASE WHEN TRIM(employee_number) <> '' THEN TRIM(employee_number) ELSE '' END) COLLATE utf8mb4_bin number_key,
             (CASE WHEN TRIM(employee_number) <> '' THEN '' ELSE LOWER(TRIM(reporter_name)) END) COLLATE utf8mb4_bin name_key,
             (CASE WHEN TRIM(employee_number) <> '' THEN '' ELSE LOWER(TRIM(department_label)) END) COLLATE utf8mb4_bin department_key
-          FROM tickets t ${where} ${where ? 'AND' : 'WHERE'} t.requester_type <> 'top_management'
+          FROM tickets t ${where} ${where ? 'AND' : 'WHERE'} t.requester_type = 'employee'
         ), ranked AS (
           SELECT filtered.*, COUNT(*) OVER (PARTITION BY numbered, number_key, name_key, department_key) ticket_count,
             SUM(status IN ('resolved', 'closed')) OVER (PARTITION BY numbered, number_key, name_key, department_key) closed_count,

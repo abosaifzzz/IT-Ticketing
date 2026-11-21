@@ -1,3 +1,4 @@
+import { formatAnydeskId } from '../../../services/tickets/anydesk'
 import { formatTicketReference } from '../../../services/tickets/formatTicketReference.js'
 import { ArrowRight, CalendarDays, Hash, UserRound } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
@@ -23,6 +24,7 @@ export function TicketDetailsApi() {
 
     <section className="content-card"><dl className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4"><div><dt className="text-xs text-muted">اسم الموظف</dt><dd className="mt-1.5 font-bold text-ink">{ticket.reporterName}</dd></div><div><dt className="text-xs text-muted">القسم</dt><dd className="mt-1.5 font-bold text-ink">{ticket.department}</dd></div><div><dt className="text-xs text-muted">التصنيف</dt><dd className="mt-1.5 font-bold text-ink">{ticket.category}</dd></div><div><dt className="text-xs text-muted">التصنيف الفرعي</dt><dd className="mt-1.5 font-bold text-ink">{ticket.subcategory}</dd></div><div className="sm:col-span-2"><dt className="flex items-center gap-2 text-xs text-muted"><CalendarDays size={15} />التاريخ والوقت</dt><dd className="mt-1.5 font-bold text-ink">{dateFormatter.format(new Date(ticket.createdAt))}</dd></div><div className="sm:col-span-2"><dt className="flex items-center gap-2 text-xs text-muted"><UserRound size={15} />المهندس المسؤول</dt><dd className="mt-1.5 font-bold text-ink">{ticket.assignedTechnician ?? 'لم يتم الإسناد بعد'}</dd></div></dl></section>
 
+    <section className="content-card mt-6"><h2 className="text-lg font-extrabold text-ink">بيانات التواصل وقت إنشاء الطلب</h2><p className="mt-2 text-sm text-muted">اسم المستخدم: {ticket.reporterUsername || 'غير متاح'} · الهاتف: {ticket.reporterPhone || 'غير متاح'} · AnyDesk: <bdi dir="ltr">{formatAnydeskId(ticket.anydeskId) || 'غير متاح'}</bdi></p></section>
     <section className="content-card mt-6"><h2 className="text-lg font-extrabold text-ink">ملاحظات المهندس العامة</h2>{ticket.publicTechnicianNotes?.length ? <div className="mt-4 space-y-3">{ticket.publicTechnicianNotes.map((note) => <article key={note.id} className="rounded-xl bg-canvas p-4"><p className="text-sm leading-7 text-muted">{note.text}</p><time className="mt-2 block text-xs text-muted">{dateFormatter.format(new Date(note.createdAt))}</time></article>)}</div> : <p className="mt-3 text-sm text-muted">لم يضف المهندس ملاحظات عامة بعد.</p>}</section>
 
     <div className="mt-6"><ResolutionConfirmation ticket={ticket} onConfirm={confirmResolution} onReopen={reopen} /></div>

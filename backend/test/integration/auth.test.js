@@ -8,7 +8,7 @@ import { parse } from 'dotenv'
 import { createPool } from '../../src/db/pool.js'
 import { createMySqlUserRepository } from '../../src/repositories/mysqlUserRepository.js'
 import { createMySqlSessionRepository } from '../../src/repositories/mysqlSessionRepository.js'
-import { createLocalAccountService } from '../../src/auth/localAccountService.js'
+import { createLocalAccountService } from '../support/accounts.js'
 import { createLocalPasswordProvider } from '../../src/auth/localPasswordProvider.js'
 import { createAuthService, hashSessionToken } from '../../src/auth/authService.js'
 import { verifyPassword } from '../../src/auth/passwords.js'
@@ -124,7 +124,7 @@ test('local provisioning stores salted Argon2id hashes and no plaintext password
   assert.equal(hashes.size, 3, 'Identical passwords must receive different salts')
   await assert.rejects(accountService.create({ ...accounts[0], password }), (error) => error.code === 'ER_DUP_ENTRY')
   await assert.rejects(accountService.create({ email: 'invalid', fullName: 'Fictional', role: 'employee', password }))
-  await assert.rejects(accountService.create({ email: 'invalid-role@demo.example', fullName: 'Fictional', role: 'admin', password }))
+  await assert.rejects(accountService.create({ email: 'invalid-role@demo.example', fullName: 'Fictional', role: 'superuser', password }))
   await assert.rejects(accountService.create({ email: 'empty-password@demo.example', fullName: 'Fictional', role: 'employee', password: '' }))
 })
 
@@ -135,7 +135,8 @@ test('HTTP login returns server-owned identity for all roles; only token hashes 
     const token = cookie.split('=')[1]
     const body = await response.json()
     assert.deepEqual(Object.keys(body), ['user'])
-    assert.deepEqual(Object.keys(body.user).sort(), ['id', 'name', 'role', 'roleLabel', 'username'])
+    assert.deepEqual(Object.keys(body.user).sort(), ['id', 'mustChangePassword','mustCompleteProfile', 'name', 'role', 'roleLabel', 'username'])
+    assert.equal(body.user.mustChangePassword,false)
     assert.equal(body.user.id, account.id)
     assert.equal(body.user.role, account.role)
     assert.equal(body.user.name, account.fullName)

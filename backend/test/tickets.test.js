@@ -27,14 +27,26 @@ test('employee ticket views omit the IT solution while preserving resolution his
   assert.equal(engineerDetails.history[0].note, solution)
 })
 
-test('ticket validation requires explicit reporter and department, defaults personal, and forbids ownership claims', () => {
+test('ticket validation accepts an optional AnyDesk ID and rejects malformed values', () => {
+  assert.equal(ticketInput(valid, employee).anydeskId, null)
+  assert.equal(ticketInput({ ...valid, anydeskId: '' }, employee).anydeskId, null)
+  assert.equal(ticketInput({ ...valid, anydeskId: ' 123 456 789 ' }, employee).anydeskId, '123456789')
+  assert.equal(ticketInput({ ...valid, anydeskId: '1-234-567-890' }, employee).anydeskId, '1234567890')
+  assert.equal(ticketInput({ ...valid, anydeskId: 'Front.Desk@ad' }, employee).anydeskId, 'front.desk@ad')
+  assert.equal(ticketInput({ ...valid, reporterUserId: randomUUID(), anydeskId: '987654321' }, { role: 'technician' }).anydeskId, '987654321')
+  for (const anydeskId of ['12345', '1234567890123', 'abc', '=1+2', '<script>@ad', 123456789]) fails(() => ticketInput({ ...valid, anydeskId }, employee))
+})
+
+test('ticket validation derives employee identity, permits automatic department selection and forbids ownership claims', () => {
   const result = ticketInput(valid, employee)
   assert.equal(result.createdFor, 'self')
   assert.equal(result.source, 'portal')
   assert.equal(result.subcategory, null)
   assert.equal(result.description, valid.description)
-  assert.equal(ticketInput({ ...valid, createdFor: 'other' }, employee).createdFor, 'other')
-  for (const key of ['reporterName', 'departmentId', 'categoryId', 'title', 'description']) {
+  fails(()=>ticketInput({ ...valid, createdFor: 'other' }, employee))
+  assert.equal(result.accountReporter,true)
+  assert.equal(result.reporterName,'')
+  for (const key of ['categoryId', 'title', 'description']) {
     const body = { ...valid }
     delete body[key]
     fails(() => ticketInput(body, employee))
@@ -50,8 +62,8 @@ test('manual tickets and initial assignments enforce role and requester rules', 
   fails(() => ticketInput({ ...valid, source: 'manual' }, employee), 403)
   fails(() => ticketInput({ ...valid, assignedTechnicianId: randomUUID() }, employee), 403)
   const engineer = { role: 'technician' }, manager = { role: 'manager' }
-  assert.equal(ticketInput(valid, engineer).source, 'manual')
-  assert.equal(ticketInput(valid, engineer).createdFor, null)
+  assert.equal(ticketInput({...valid,reporterUserId:randomUUID()}, engineer).source, 'manual')
+  assert.equal(ticketInput({...valid,reporterUserId:randomUUID()}, engineer).createdFor, null)
   fails(() => ticketInput({ ...valid, assignedTechnicianId: randomUUID() }, engineer), 403)
   fails(() => ticketInput({ ...valid, source: 'portal' }, manager), 403)
   fails(() => ticketInput({ ...valid, requesterType: 'top_management' }, manager))
@@ -60,6 +72,27 @@ test('manual tickets and initial assignments enforce role and requester rules', 
   assert.equal(ticketInput(senior, manager).department, null)
   fails(() => ticketInput({ ...senior, departmentId: valid.departmentId }, manager))
   fails(() => ticketInput({ ...senior, employeeNumber: '123' }, manager))
+})
+
+test('IT tickets are manager-only internal tasks with a required engineer and no requester or department', () => {
+  const manager = { role: 'manager' }, engineer = { role: 'technician' }
+  const internal = { title: valid.title, description: 'تغيير مؤقت جهاز التكييف', requesterType: 'it_internal', assignedTechnicianId: randomUUID() }
+  const result = ticketInput(internal, manager)
+  assert.equal(result.requesterType, 'it_internal')
+  assert.equal(result.source, 'manual')
+  assert.equal(result.department, null)
+  assert.equal(result.accountReporter, false)
+  assert.equal(result.reporterUserId, null)
+  assert.equal(result.reporterName, 'قسم تكنولوجيا المعلومات')
+  assert.equal(result.category, null)
+  assert.equal(result.subcategory, null)
+  fails(() => ticketInput({ ...internal, categoryId: valid.categoryId }, manager))
+  fails(() => ticketInput({ ...internal, subcategoryId: randomUUID() }, manager))
+  fails(() => ticketInput({ ...internal, requesterType: 'employee', reporterUserId: randomUUID() }, manager))
+  fails(() => ticketInput(internal, engineer), 403)
+  fails(() => ticketInput(internal, employee))
+  fails(() => ticketInput({ ...internal, assignedTechnicianId: undefined }, manager))
+  for (const field of ['reporterName', 'reporterUserId', 'departmentId', 'managementPosition', 'reporterPhone', 'employeeNumber']) fails(() => ticketInput({ ...internal, [field]: field === 'reporterUserId' || field === 'departmentId' ? randomUUID() : 'قيمة' }, manager))
 })
 
 test('ticket query validation prevents scope overrides, unbounded pagination and invalid calendar dates', () => {

@@ -13,7 +13,7 @@ const { parse } = createRequire(new URL('../../backend/package.json', import.met
 import { createPool } from '../../backend/src/db/pool.js'
 import { createMySqlUserRepository } from '../../backend/src/repositories/mysqlUserRepository.js'
 import { createMySqlSessionRepository } from '../../backend/src/repositories/mysqlSessionRepository.js'
-import { createLocalAccountService } from '../../backend/src/auth/localAccountService.js'
+import { createLocalAccountService } from '../../backend/test/support/accounts.js'
 import { createLocalPasswordProvider } from '../../backend/src/auth/localPasswordProvider.js'
 import { createAuthService } from '../../backend/src/auth/authService.js'
 import { createMySqlTicketRepository } from '../../backend/src/repositories/mysqlTicketRepository.js'
@@ -24,6 +24,7 @@ import { createMySqlTicketWorkflowRepository } from '../../backend/src/repositor
 import { createNotificationService } from '../../backend/src/notifications/service.js'
 import { ticketInput } from '../../backend/src/tickets/validation.js'
 import { createApp } from '../../backend/src/app.js'
+import { createProfileRepository } from '../../backend/src/auth/profiles.js'
 
 const accounts = [], pending = new Map(), departments = [], categories = [], subcategories = [], directoryEmployees = []
 let ticketRepository, workflow, dropNext = false
@@ -42,9 +43,9 @@ try {
   const notifications=createNotificationService(); ticketRepository=createMySqlTicketRepository(pool,{notifications}); workflow=createMySqlTicketWorkflowRepository(pool,{notifications})
   const auth = createAuthService({ provider: await createLocalPasswordProvider(users), sessions: createMySqlSessionRepository(pool) })
   let origin
-  const app = createApp({ notificationRepository:createMySqlNotificationRepository(pool), authService: {
+  const app = createApp({ profileRepository: createProfileRepository(pool),  notificationRepository:createMySqlNotificationRepository(pool), authService: {
     async login(input) { if (failLogin) { const error = Error('Private'); error.code = 'ER_LOCK_WAIT_TIMEOUT'; throw error } return auth.login(input) },
-    async getUser(token) { if (meDelay) await new Promise((resolve) => setTimeout(resolve, meDelay)); if (apiFailure) throw Error('Private'); return auth.getUser(token) },
+    async getUser(token, options) { if (meDelay) await new Promise((resolve) => setTimeout(resolve, meDelay)); if (apiFailure) throw Error('Private'); return auth.getUser(token, options) },
     async logout(token) { if (failLogout) throw Error('Private'); return auth.logout(token) },
   }, managementRepositories, ticketRepository: { ...ticketRepository, async create(...args) { const result=await ticketRepository.create(...args); if(dropNext){dropNext=false;throw Error('Fictional lost response')}return result } }, ticketWorkflowRepository: workflow, dashboardRepository: createMySqlDashboardRepository(pool), config: { nodeEnv: 'test', get appOrigin() { return origin } } })
   api = app.listen(0, '127.0.0.1'); await once(api, 'listening')

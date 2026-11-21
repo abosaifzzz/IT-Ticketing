@@ -24,4 +24,5 @@ export const EVENT_NAMES = Object.freeze({
   ASSETS_CHANGED: 'asset:changed',
   SESSION_CHANGED: 'session:changed',
   ADMIN_PERMISSIONS_CHANGED: 'admin:permissions-changed',
+  TOAST_SHOWN: 'ui:toast-shown',
 })

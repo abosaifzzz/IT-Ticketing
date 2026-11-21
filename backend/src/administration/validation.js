@@ -1,5 +1,7 @@
 import {ApiError,fields,text,uuid,boolean} from '../management/validation.js'
-import {roles,adminPermissions,requiredPermissions} from './policy.js'
+import {roles,adminPermissions,requiredPermissions,requireStrongAdminPassword} from './policy.js'
+import {profileInput} from '../auth/profiles.js'
+export const canonicalRole=value=>value==='engineer'?'technician':value
 export const bad=(message='Invalid administrative input',status=400)=>{throw new ApiError(status,message)}
 export const noBody=body=>{if(body!==undefined&&(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length))bad()}
 export function filters(query,extra=[]) {
@@ -11,23 +13,39 @@ export function filters(query,extra=[]) {
  return {...query,search,from,to,page:number(query.page,1,100000),pageSize:number(query.pageSize,25,100)}
 }
 export function accountCreate(body) {
- fields(body,['email','fullName','role'])
- const email=text(body.email,254).toLowerCase(),fullName=text(body.fullName)
- if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||fullName.length<2||!roles.includes(body.role))bad()
- return {email,fullName,role:body.role}
+ fields(body,['email','username','fullName','role'])
+ const email=body.email===undefined?null:text(body.email,254).toLowerCase(),fullName=text(body.fullName)
+ const username=body.username===undefined?null:text(body.username,100).toLowerCase()
+ const role=canonicalRole(body.role)
+ if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||username&&!/^[a-z0-9][a-z0-9._ -]{0,99}$/.test(username)||!email&&!username||fullName.length<2||!roles.includes(role))bad()
+ return {email,username,fullName,role}
 }
 export function accountUpdate(body) {
- fields(body,['fullName','isActive'])
+ fields(body,['fullName','isActive','username','phone','departmentIds','role','reason','adminPassword'])
  const result={}
  if(body.fullName!==undefined){result.fullName=text(body.fullName);if(result.fullName.length<2)bad()}
  if(body.isActive!==undefined)result.isActive=boolean(body.isActive)
+ if(body.username!==undefined){result.username=text(body.username,100).toLowerCase();if(!/^[a-z0-9][a-z0-9._ -]{0,99}$/.test(result.username))bad()}
+ if(body.phone!==undefined||body.departmentIds!==undefined)result.profile=profileInput({phone:body.phone,departmentIds:body.departmentIds})
+ if(body.role!==undefined)result.roleChange=roleChangeInput({role:body.role,reason:body.reason,adminPassword:body.adminPassword})
+ else if(body.reason!==undefined||body.adminPassword!==undefined)bad('A role is required for a role change')
  if(!Object.keys(result).length)bad()
  return result
 }
 export function requestInput(body,role=false) {
  fields(body,role?['role','reason']:['reason'])
- if(role&&!roles.includes(body.role))bad()
- return {reason:text(body.reason,300),...(role?{role:body.role}:{})}
+ const nextRole=canonicalRole(body.role)
+ if(role&&!roles.includes(nextRole))bad()
+ return {reason:text(body.reason,300),...(role?{role:nextRole}:{})}
+}
+export function roleChangeInput(body) {
+ fields(body,['role','reason','adminPassword'])
+ const role=canonicalRole(body.role)
+ if(!roles.includes(role))bad()
+ const reason=text(body.reason,300)
+ if(role==='admin')requireStrongAdminPassword(body.adminPassword)
+ else if(body.adminPassword!==undefined)bad('An administrator password is only accepted for Admin promotion')
+ return {role,reason,...(role==='admin'?{adminPassword:body.adminPassword}:{})}
 }
 export function permissionInput(body,role) {
  fields(body,['permissions'])

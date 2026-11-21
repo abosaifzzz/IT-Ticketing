@@ -1,3 +1,4 @@
+import { formatAnydeskId } from '../../services/tickets/anydesk'
 import { formatTicketReference } from '../../services/tickets/formatTicketReference.js'
 import { CalendarDays, Hash, UserRound, X } from 'lucide-react'
 import { useEffect, useRef } from 'react'
@@ -39,8 +40,10 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onAddComme
       <dl className="mt-6 grid gap-4 rounded-2xl bg-canvas p-4 sm:grid-cols-2">
         <div><dt className="flex items-center gap-2 text-xs text-muted"><CalendarDays size={15} />تاريخ الإنشاء</dt><dd className="mt-1.5 text-sm font-bold text-ink">{dateFormatter.format(new Date(ticket.createdAt))}</dd></div>
         <div><dt className="flex items-center gap-2 text-xs text-muted"><UserRound size={15} />المهندس المسؤول</dt><dd className="mt-1.5 text-sm font-bold text-ink">{ticket.assignedTechnician ?? 'لم يتم الإسناد بعد'}</dd></div>
-        <div><dt className="text-xs text-muted">القسم</dt><dd className="mt-1.5 text-sm font-bold text-ink">{ticket.department}</dd></div>
-        <div><dt className="text-xs text-muted">مقدم الطلب</dt><dd className="mt-1.5 text-sm font-bold text-ink">{ticket.reporterName}</dd></div>
+        <div><dt className="text-xs text-muted">القسم</dt><dd className="mt-1.5 text-sm font-bold text-ink">{ticket.department || 'غير متاح'}</dd></div>
+        <div><dt className="text-xs text-muted">مقدم الطلب</dt><dd className="mt-1.5 text-sm font-bold text-ink">{ticket.reporterName || 'غير متاح'}</dd></div>
+        <div><dt className="text-xs text-muted">اسم المستخدم وقت البلاغ</dt><dd className="mt-1.5 text-sm font-bold text-ink">{ticket.reporterUsername || 'غير متاح'}</dd></div>
+        <div><dt className="text-xs text-muted">الهاتف وقت البلاغ</dt><dd className="mt-1.5 text-sm font-bold text-ink">{ticket.reporterPhone || 'غير متاح'}</dd></div>{ticket.anydeskId && <div><dt className="text-xs text-muted">معرّف AnyDesk</dt><dd className="mt-1.5 text-sm font-bold text-ink"><bdi dir="ltr">{formatAnydeskId(ticket.anydeskId)}</bdi></dd></div>}
         <div><dt className="text-xs text-muted">تصنيف العطل</dt><dd className="mt-1.5 text-sm font-bold text-ink">{ticket.category ?? 'غير مصنف'}</dd></div>
       </dl>
       <div className="mt-5"><h3 className="text-sm font-extrabold text-ink">وصف العطل</h3><p className="mt-2 text-sm leading-7 text-muted">{ticket.description ?? 'لا يوجد وصف متاح.'}</p></div>

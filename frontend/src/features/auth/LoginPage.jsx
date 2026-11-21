@@ -1,7 +1,7 @@
 import { AlertCircle, ArrowLeft, Eye, EyeOff, LockKeyhole, Moon, ShieldCheck, Sun, UserRound } from 'lucide-react'
 import { useState } from 'react'
-import { Navigate, useNavigate } from 'react-router-dom'
-import { ROLE_DESTINATIONS } from '../../services/auth/roles'
+import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { requiresAccountSetup, ROLE_DESTINATIONS } from '../../services/auth/roles'
 import { themeService } from '../../services/preferences/themeService'
 import { useAuth } from './useAuth'
 import { SessionStatus } from './SessionStatus'
@@ -9,15 +9,19 @@ import { SessionStatus } from './SessionStatus'
 export function LoginPage() {
   const { status, mode, isAuthenticated, user, login } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [credentials, setCredentials] = useState({ username: '', password: '' })
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [theme, setTheme] = useState(() => themeService.getActiveTheme())
+  const completionMessage = new URLSearchParams(location.search).get('setup') === 'complete'
+    ? 'اكتمل إعداد الحساب. سجّل الدخول بكلمة المرور الجديدة.'
+    : ''
 
   if (status === 'loading' || status === 'error') return <SessionStatus />
 
-  if (isAuthenticated) return <Navigate to={ROLE_DESTINATIONS[user.role] ?? '/unauthorized'} replace />
+  if (isAuthenticated) return <Navigate to={requiresAccountSetup(user) ? '/setup' : ROLE_DESTINATIONS[user.role] ?? '/unauthorized'} replace />
 
   const updateField = (event) => {
     setCredentials((current) => ({ ...current, [event.target.name]: event.target.value }))
@@ -37,7 +41,7 @@ export function LoginPage() {
     try {
       const session = await login(credentials)
       setCredentials((current) => ({ ...current, password: '' }))
-      navigate(ROLE_DESTINATIONS[session.role] ?? '/unauthorized', { replace: true })
+      navigate(requiresAccountSetup(session.user) ? '/setup' : ROLE_DESTINATIONS[session.role] ?? '/unauthorized', { replace: true })
     } catch (loginError) {
       setError(loginError.message || 'تعذر تسجيل الدخول. يرجى المحاولة مرة أخرى.')
     } finally {
@@ -73,11 +77,12 @@ export function LoginPage() {
           </div>
 
           <form className="mt-8 space-y-5" onSubmit={handleSubmit} aria-busy={isLoading} noValidate>
+            {(location.state?.message || completionMessage) && <p role="status" className="rounded-xl border border-green-300 p-3 text-sm text-green-800 dark:text-green-300">{location.state?.message || completionMessage}</p>}
             {error && <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-3.5 text-sm font-semibold text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200" role="alert"><AlertCircle className="mt-0.5 shrink-0" size={18} /><span>{error}</span></div>}
 
             <label className="block">
               <span className="mb-2 block text-sm font-bold text-ink">اسم المستخدم أو البريد الإلكتروني</span>
-              <span className="relative block"><UserRound className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-muted" size={19} /><input type="text" name="username" value={credentials.username} onChange={updateField} autoComplete="username" dir="ltr" className="h-12 w-full rounded-xl border border-border bg-canvas pr-11 pl-4 text-left text-sm text-ink outline-none transition focus:border-primary-500 focus:ring-4 focus:ring-primary-100 dark:focus:ring-primary-900/30" placeholder="name@FOC.com" disabled={isLoading} /></span>
+              <span className="relative block"><UserRound className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-muted" size={19} /><input type="text" name="username" value={credentials.username} onChange={updateField} autoComplete="username" dir="ltr" className="h-12 w-full rounded-xl border border-border bg-canvas pr-11 pl-4 text-left text-sm text-ink outline-none transition focus:border-primary-500 focus:ring-4 focus:ring-primary-100 dark:focus:ring-primary-900/30" placeholder="اسم المستخدم أو البريد الإلكتروني" disabled={isLoading} /></span>
             </label>
 
             <label className="block">

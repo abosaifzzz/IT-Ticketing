@@ -15,7 +15,7 @@ const { parse } = createRequire(
 import { createPool } from "../../backend/src/db/pool.js";
 import { createMySqlUserRepository } from "../../backend/src/repositories/mysqlUserRepository.js";
 import { createMySqlSessionRepository } from "../../backend/src/repositories/mysqlSessionRepository.js";
-import { createLocalAccountService } from "../../backend/src/auth/localAccountService.js";
+import { createLocalAccountService } from "../../backend/test/support/accounts.js";
 import { createLocalPasswordProvider } from "../../backend/src/auth/localPasswordProvider.js";
 import { createAuthService } from "../../backend/src/auth/authService.js";
 import { createMySqlTicketRepository } from "../../backend/src/repositories/mysqlTicketRepository.js";
@@ -30,6 +30,7 @@ import { createMySqlEmployeeDirectoryRepository } from "../../backend/src/reposi
 import { assetInput } from "../../backend/src/assets/validation.js";
 import { createMySqlReportRepository } from "../../backend/src/repositories/mysqlReportRepository.js";
 import { createApp } from "../../backend/src/app.js";
+import { createProfileRepository } from '../../backend/src/auth/profiles.js'
 
 const accounts = [],
   pending = new Map(),
@@ -143,7 +144,7 @@ try {
     sessions: createMySqlSessionRepository(pool),
   });
   let origin;
-  const app = createApp({
+  const app = createApp({ profileRepository: createProfileRepository(pool), 
     notificationRepository: createMySqlNotificationRepository(pool),
     authService: {
       async login(input) {
@@ -154,11 +155,11 @@ try {
         }
         return auth.login(input);
       },
-      async getUser(token) {
+      async getUser(token, options) {
         if (meDelay)
           await new Promise((resolve) => setTimeout(resolve, meDelay));
         if (apiFailure) throw Error("Private");
-        return auth.getUser(token);
+        return auth.getUser(token, options);
       },
       async logout(token) {
         if (failLogout) throw Error("Private");

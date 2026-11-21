@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import {test} from 'node:test'
 import {randomUUID} from 'node:crypto'
 import {adminPermissions,operationalPermissions,requiredPermissions,requireAdminIdentity,strongAdminPassword} from '../src/administration/policy.js'
-import {permissionInput,accountCreate,settingInput} from '../src/administration/validation.js'
+import {permissionInput,accountCreate,accountUpdate,settingInput,roleChangeInput} from '../src/administration/validation.js'
 import {sanitize} from '../src/administration/audit.js'
 import {createMonitoring} from '../src/administration/monitoring.js'
 import {createBackupService} from '../src/administration/backups.js'
@@ -23,6 +23,21 @@ test('administration is independent from every operational role and denies permi
 test('admin password policy is strong without changing ordinary account password rules',()=>{
  assert.equal(strongAdminPassword('Long-fictional-passphrase-01'),true)
  for(const password of ['', 'short',' leading-password-123456', 'password-123456789\n', 'x'.repeat(1025)])assert.equal(strongAdminPassword(password),false)
+})
+test('direct role change input validates the target role and a private Admin promotion password',()=>{
+ assert.deepEqual(roleChangeInput({role:'engineer',reason:'Fictional appointment'}),{role:'technician',reason:'Fictional appointment'})
+ assert.deepEqual(roleChangeInput({role:'admin',reason:'Fictional promotion',adminPassword:'Long-fictional-passphrase-01'}),{role:'admin',reason:'Fictional promotion',adminPassword:'Long-fictional-passphrase-01'})
+ assert.throws(()=>roleChangeInput({role:'admin',reason:'Fictional promotion'}),{status:400})
+ assert.throws(()=>roleChangeInput({role:'admin',reason:'Fictional promotion',adminPassword:'123'}),{status:400})
+ assert.throws(()=>roleChangeInput({role:'manager',reason:'Fictional appointment',adminPassword:'not-allowed'}),{status:400})
+})
+test('one account update validates combined profile, state and role changes',()=>{
+ const departmentId=randomUUID()
+ assert.deepEqual(accountUpdate({fullName:'Fictional User',isActive:false,phone:'01000000000',departmentIds:[departmentId],role:'engineer',reason:'Fictional reassignment'}),{
+  fullName:'Fictional User',isActive:false,profile:{phone:'01000000000',departmentIds:[departmentId]},roleChange:{role:'technician',reason:'Fictional reassignment'},
+ })
+ assert.throws(()=>accountUpdate({role:'manager'}),{status:400})
+ assert.throws(()=>accountUpdate({reason:'No role'}),{status:400})
 })
 test('settings reject secrets, unknown keys and weakening administrative session boundaries',()=>{
  assert.throws(()=>settingInput('authentication',{expectedVersion:0,values:{adminSessionMinutes:1440,recentAuthenticationMinutes:30}}),{status:400})

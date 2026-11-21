@@ -6,7 +6,7 @@ import {testEnvironment} from '../support/database.js'
 import {createPool} from '../../src/db/pool.js'
 import {createMySqlUserRepository} from '../../src/repositories/mysqlUserRepository.js'
 import {createMySqlSessionRepository} from '../../src/repositories/mysqlSessionRepository.js'
-import {createLocalAccountService} from '../../src/auth/localAccountService.js'
+import {createLocalAccountService} from '../support/accounts.js'
 import {createLocalPasswordProvider} from '../../src/auth/localPasswordProvider.js'
 import {createAuthService} from '../../src/auth/authService.js'
 import {createMySqlReferenceRepository} from '../../src/repositories/mysqlReferenceRepository.js'
@@ -290,12 +290,25 @@ test('quantity edits validate boundaries and cannot bypass custody, groups or ma
   assert.equal((await http('/assets',{method:'POST',body:{clientRequestId:randomUUID(),assetTypeId:disabledType.id,locationId:location.id,quantity}})).status,400)
   assert.equal((await http('/assets/'+batch.id,{method:'PATCH',body:{clientRequestId:randomUUID(),quantity}})).status,400)
  }
- await run('simpleAssetCustody',{id:batch.id,action:'ASSIGN',locationId:location.id,custodianType:'employee',custodianId:employee.id})
- await assert.rejects(run('simpleAssetUpdate',{id:batch.id,quantity:2}),{status:409})
+ // Assigning warehouse stock issues only the chosen units; the rest stay in stock.
+ const issued=await run('simpleAssetCustody',{id:batch.id,action:'ASSIGN',locationId:location.id,custodianType:'employee',custodianId:employee.id,quantity:2})
+ assert.equal(issued.quantity,2);assert.equal(issued.issuedFromStockId,batch.id);assert.equal(issued.custodianType,'employee')
+ assert.equal((await repo.simpleDetail('assets',batch.id,accounts.manager)).quantity,4)
+ await assert.rejects(run('simpleAssetCustody',{id:batch.id,action:'ASSIGN',locationId:location.id,custodianType:'employee',custodianId:employee.id,quantity:5}),{status:409})
+ await assert.rejects(run('simpleAssetUpdate',{id:issued.id,quantity:3}),{status:409})
+ await assert.rejects(run('simpleAssetDelete',{id:issued.id}),{status:409})
  await assert.rejects(run('simpleAssetDelete',{id:batch.id}),{status:409})
- await run('simpleAssetCustody',{id:batch.id,action:'TRANSFER',locationId:otherLocation.id,custodianType:'department',custodianId:department.id})
- const assigned=await repo.simpleDetail('assets',batch.id,accounts.manager);assert.equal(assigned.quantity,6);assert.equal(assigned.assignments.filter(a=>!a.ended_at).length,1)
- await run('simpleAssetCustody',{id:batch.id,action:'RETURN',locationId:location.id,custodianType:'none'})
+ await run('simpleAssetCustody',{id:issued.id,action:'TRANSFER',locationId:otherLocation.id,custodianType:'department',custodianId:department.id})
+ const assigned=await repo.simpleDetail('assets',issued.id,accounts.manager);assert.equal(assigned.quantity,2);assert.equal(assigned.assignments.filter(a=>!a.ended_at).length,1)
+ // Returning merges the units back into the warehouse record.
+ const merged=await run('simpleAssetCustody',{id:issued.id,action:'RETURN',locationId:location.id,custodianType:'none'})
+ assert.equal(merged.id,batch.id);assert.equal(merged.quantity,6);assert.equal(merged.mergedFromAssetId,issued.id)
+ await assert.rejects(repo.simpleDetail('assets',issued.id,accounts.manager),{status:404})
+ // Receiving more units adds to the warehouse record.
+ assert.equal((await run('simpleAssetReceive',{id:batch.id,quantity:4,notes:'New box'})).quantity,10)
+ assert.equal((await run('simpleAssetUpdate',{id:batch.id,quantity:6})).quantity,6)
+ const serialized=await makeAsset({assetTypeId:requiredType.id,serialNumber:'Receive '+suffix})
+ await assert.rejects(run('simpleAssetReceive',{id:serialized.id,quantity:1}),{status:400})
  const group=await run('simpleGroupCreate',{name:'Quantity group '+suffix})
  assert.equal((await run('simpleGroupAdd',{id:group.id,assetId:batch.id})).pending,true)
  const member=await makeAsset();await run('simpleGroupAdd',{id:group.id,assetId:member.id})

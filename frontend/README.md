@@ -2,6 +2,14 @@
 
 All in-scope pages use the cookie-authenticated backend API by default. See [root setup, verification and production limitations](../LOCAL_VERIFICATION.md). The same-ticket lifecycle passed against both source and compiled frontend with a restricted MySQL runtime account. Demo passwords and development authentication are excluded from production builds, with build guards and artifact scans.
 
+## Current account-profile migration
+
+The current frontend follows [the account-profile API contract](../backend/docs/account-profiles.md), which supersedes older employee-directory and on-behalf instructions elsewhere in this historical README. Login accepts a username (including internal spaces) or an existing email. Users with a required password/profile setup are redirected to `/setup` before portal or notification queries; setup and `/profile` use cookie-authenticated `/api/auth` endpoints. Setup success revokes the session and requires a new login. Passwords and session tokens are not stored in browser storage.
+
+API notification preview and live delivery use the same opt-in Web Audio patterns; playback waits for a user gesture and each incoming notification ID is played at most once per mounted browser session. Admin account, permission, settings and backup confirmations use Arabic keyboard-accessible dialogs instead of native browser prompts. The current Admin password is entered only in the verification dialog and sent to `/api/admin/reauthenticate`; `adminPassword` in account updates remains reserved for the new target Admin password. Frontend checks cover the service payloads and feed deduplication; a full live-browser pass still requires an available backend test environment.
+
+Employee API tickets use the signed-in account and its saved department memberships. The employee form no longer selects a directory person or creates a ticket on behalf of another account. Engineer/Manager manual employee tickets search all employee login accounts through paginated `/api/user-options`, including accounts that have not completed setup; disabled accounts are visibly marked and cannot receive new tickets. A selected employee's active department is filled automatically when unique, otherwise an allowed department must be selected; a missing saved phone may be supplied as an optional ticket-only snapshot. Migration 019 makes new account-selected manual tickets visible in that employee's server-scoped dashboard, list and details while keeping the IT creator separate. Senior-management requests remain separate. Ticket identity/contact fields shown to IT are the server's creation-time snapshots, not current profile joins. Legacy asset custody still uses its historical directory identifiers; this frontend does not import or map roster data. The Admin users page supports account creation and one-button atomic edits to identity, contact/memberships, activity and role through a coded password-verification dialog, strong-password Admin promotion and operational temporary resets without exposing passwords. API authorization remains the server's responsibility.
+
 واجهة عربية داخلية لمكتب دعم تكنولوجيا المعلومات. تدعم المصادقة الحقيقية عبر API؛ تبقى صفحات الأعمال التجريبية متاحة فقط في وضع التطوير الصريح إلى حين ترحيلها.
 
 ## التشغيل
@@ -49,7 +57,7 @@ npm run preview
 - `/manager/departments` — إدارة أقسام المركز
 - `/manager/technicians` — إدارة مهندسي تكنولوجيا المعلومات التجريبيين
 - `/admin` — لوحة مستقلة لمسؤول النظام بإحصاءات الحسابات والأمان والمراقبة والنسخ الاحتياطية من `/api/admin`
-- `/admin/users` — إنشاء حسابات معطلة، البحث والتفعيل والتعطيل وطلبات تغيير الدور وإعادة كلمة المرور وإلغاء الجلسات
+- `/admin/users` — إنشاء الحسابات، البحث والتفعيل والتعطيل وتغيير الدور مباشرة بعد إعادة التحقق، وإعادة كلمة المرور وإلغاء الجلسات
 - `/admin/roles` — مصفوفة الأدوار وصلاحيات الإدارة فقط؛ سياسات البلاغات والأصول للعرض لا للتعديل
 - `/admin/audit` — سجل تدقيق للقراءة فقط، مع تصفية الدور والفاعل والوحدة والنتيجة والتاريخ
 - `/admin/settings` — إعدادات النظام المرقمة النسخة؛ الشعار الحالي للعرض حتى تتوفر واجهة رفع آمنة

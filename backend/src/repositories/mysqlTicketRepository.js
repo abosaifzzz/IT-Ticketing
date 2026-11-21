@@ -1,7 +1,16 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { isIP } from 'node:net'
 import { ApiError } from '../management/validation.js'
 import { mapTicket as map, mapTicketForUser, ticketScope as scope, ticketReadScope as readScope, ticketDetails as details } from '../tickets/ticketView.js'
 import { NOTIFICATION_TYPES } from '../notifications/service.js'
+import { IT_TICKET_CATEGORY_LABEL, IT_TICKET_SUBCATEGORY_LABEL } from '../tickets/validation.js'
+
+// Strips the IPv4-mapped IPv6 prefix and rejects anything that is not a plain address.
+function normalizeIp(value) {
+  if (typeof value !== "string") return null
+  const ip = value.replace(/^::ffff:(?=\d+\.\d+\.\d+\.\d+$)/i, "")
+  return ip.length <= 45 && isIP(ip) ? ip : null
+}
 
 async function activeReference(connection, table, selector) {
   if (!selector) return null
@@ -24,7 +33,9 @@ export function createMySqlTicketRepository(pool, { notifications } = {}) {
     return details(connection, row, user)
   }
   return {
-    async create(input, user) {
+    async create(input, user, { clientIp = null } = {}) {
+      // Only employee portal tickets record the submitting device address; IT-created tickets do not.
+      const reporterIp = input.source === "portal" ? normalizeIp(clientIp) : null
       scope(user)
       const fingerprint = createHash('sha256').update(JSON.stringify(input)).digest('hex')
       const connection = await pool.getConnection()
@@ -34,7 +45,23 @@ export function createMySqlTicketRepository(pool, { notifications } = {}) {
         if (!actor?.is_active || actor.role !== user.role) throw new ApiError(403, 'الطلب غير مسموح.')
         const existing = await replay(connection, user, input.clientRequestId, fingerprint)
         if (existing) { await connection.commit(); return { item: existing, created: false } }
-        let reporterName = input.reporterName, departmentSelector = input.department
+        let reporterName = input.reporterName, departmentSelector = input.department,reporterUser=null,reporterPhone=input.reporterPhone??null
+        if(input.accountReporter){
+          const reporterId=input.source==='portal'?actor.id:input.reporterUserId
+          const [[selected]]=await connection.execute('SELECT id,username,email,full_name,role,is_active,phone,must_complete_profile FROM users WHERE id=? FOR SHARE',[reporterId])
+          if(!selected?.is_active||selected.role!=='employee')throw new ApiError(400,'اختر حساب موظف نشطاً.')
+          if(input.source==='portal'&&(selected.must_complete_profile||!selected.phone))throw new ApiError(400,'أكمل بيانات حسابك أولاً.')
+          const [departments]=await connection.execute('SELECT d.id,d.name,d.is_active FROM user_departments ud JOIN departments d ON d.id=ud.department_id WHERE ud.user_id=? ORDER BY d.id FOR SHARE',[reporterId])
+          const active=departments.filter(d=>d.is_active)
+          if(!active.length&&input.source==='portal')throw new ApiError(400,'لا توجد أقسام نشطة لهذا الموظف.')
+          if(!active.length&&!departmentSelector)throw new ApiError(400,'اختر القسم لهذا البلاغ؛ لم يحدد الموظف أقسامه بعد.')
+          if(!departmentSelector&&active.length!==1)throw new ApiError(400,'اختر قسم البلاغ من أقسام الموظف.')
+          const department=departmentSelector?active.find(d=>departmentSelector.id?d.id===departmentSelector.id:d.name===departmentSelector.name):active[0]
+          if(!department&&active.length)throw new ApiError(400,'القسم المحدد غير مسند لهذا الموظف.')
+          reporterUser=selected;reporterName=selected.full_name;departmentSelector=department?{id:department.id}:departmentSelector
+          if(selected.phone&&reporterPhone&&selected.phone!==reporterPhone)throw new ApiError(400,'استخدم رقم الهاتف المحفوظ في ملف الموظف.')
+          reporterPhone=selected.phone??reporterPhone
+        }
         if (input.reporterEmployeeId) {
           const [[employee]] = await connection.execute('SELECT full_name, department_id, is_active FROM employee_directory WHERE id=? FOR SHARE', [input.reporterEmployeeId])
           if (!employee?.is_active) throw new ApiError(400, 'اختر موظفًا نشطًا من القائمة.')
@@ -45,7 +72,9 @@ export function createMySqlTicketRepository(pool, { notifications } = {}) {
         }
         const department = await activeReference(connection, 'departments', departmentSelector)
         if (input.reporterEmployeeId && input.department?.name && input.department.name !== department.name) throw new ApiError(400, 'القسم غير مطابق للموظف.')
-        const category = await activeReference(connection, 'fault_categories', input.category)
+        // IT tickets are manager commands without a fault category.
+        const internal = input.requesterType === 'it_internal'
+        const category = internal ? null : await activeReference(connection, 'fault_categories', input.category)
         let subcategory = null
         if (input.subcategory) {
           const [rows] = await connection.execute(`SELECT * FROM fault_subcategories WHERE ${input.subcategory.id ? 'id' : 'name'} = ? AND category_id = ? FOR SHARE`,
@@ -66,13 +95,13 @@ export function createMySqlTicketRepository(pool, { notifications } = {}) {
           category_id, category_label, subcategory_id, subcategory_label, title, description, source, created_for,
           requester_type, management_position, created_by_account_id, created_by_name, created_by_role,
           status, assigned_technician_id, assigned_technician_name, assigned_at, assigned_by_manager_id,
-          assigned_by_manager_name, client_request_id, request_fingerprint, created_at, updated_at
-        ) VALUES (${Array(29).fill('?').join(', ')})`,
-        [id, input.source === 'portal' ? actor.id : null, reporterName, input.employeeNumber, department?.id ?? null, department?.name ?? null,
-          category.id, category.name, subcategory?.id ?? null, subcategory?.name ?? 'عام', input.title, input.description,
+          assigned_by_manager_name, client_request_id, request_fingerprint, created_at, updated_at,reporter_user_id,reporter_username,reporter_phone,anydesk_id,reporter_ip
+        ) VALUES (${Array(34).fill('?').join(', ')})`,
+        [id, reporterUser?.id??(input.source === 'portal' ? actor.id : null), reporterName, input.employeeNumber, department?.id ?? null, department?.name ?? null,
+          category?.id ?? null, category?.name ?? IT_TICKET_CATEGORY_LABEL, subcategory?.id ?? null, subcategory?.name ?? (internal ? IT_TICKET_SUBCATEGORY_LABEL : 'عام'), input.title, input.description,
           input.source, input.createdFor, input.requesterType, input.managementPosition, actor.id, actor.full_name, actor.role,
           engineer ? 'assigned' : 'new', engineer?.id ?? null, engineer?.full_name ?? null, engineer ? now : null,
-          engineer ? actor.id : null, engineer ? actor.full_name : null, input.clientRequestId, fingerprint, now, now])
+          engineer ? actor.id : null, engineer ? actor.full_name : null, input.clientRequestId, fingerprint, now, now,reporterUser?.id??null,reporterUser?(reporterUser.username??reporterUser.email):null,reporterPhone,input.anydeskId??null,reporterIp])
         const createdEventId = randomUUID(), assignmentEventId = engineer ? randomUUID() : null
         await connection.execute(`INSERT INTO ticket_history (id, ticket_id, type, status, actor_account_id, actor_name, actor_role, occurred_at, sequence_number) VALUES (?, ?, 'status', 'new', ?, ?, ?, ?, 1)`,
           [createdEventId, id, actor.id, actor.full_name, actor.role, now])
@@ -117,7 +146,7 @@ export function createMySqlTicketRepository(pool, { notifications } = {}) {
       try {
         await connection.beginTransaction()
         const [[count]] = await connection.query("SELECT COUNT(*) total FROM tickets WHERE status = 'new' AND assigned_technician_id IS NULL")
-        const [rows] = await connection.query(`SELECT id, CONCAT('IT', ticket_sequence - 1) AS reference, title, department_label AS department, category_label AS category,
+        const [rows] = await connection.query(`SELECT id, CONCAT('IT', ticket_sequence - 1) AS reference, title, reporter_name AS reporterName,reporter_username AS reporterUsername,reporter_phone AS reporterPhone,department_id AS departmentId,department_label AS department, category_label AS category,
         subcategory_label AS subcategory, status, created_at AS createdAt FROM tickets
         WHERE status = 'new' AND assigned_technician_id IS NULL ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
       [pageSize, (page - 1) * pageSize])
@@ -140,7 +169,7 @@ export function createMySqlTicketRepository(pool, { notifications } = {}) {
         params.push(filters.creationDate, new Date(filters.creationDate.getTime() + 86400000))
       }
       if (filters.search) {
-        const columns = user.role === 'employee' ? ['id', 'reference', 'title'] : ['id', 'reference', 'title', 'reporter_name', 'department_label', 'assigned_technician_name']
+        const columns = user.role === 'employee' ? ['id', 'reference', 'title'] : ['id', 'reference', 'title', 'reporter_name','reporter_username','reporter_phone', 'department_label', 'assigned_technician_name']
         // LOCATE treats SQL wildcard characters as literal search text.
         where.push(`(${columns.map((column) => `LOCATE(?, ${column === 'id' ? 'CONVERT(id USING utf8mb4) COLLATE utf8mb4_unicode_ci' : column === 'reference' ? "CONVERT(CONCAT('IT', ticket_sequence - 1) USING utf8mb4) COLLATE utf8mb4_unicode_ci" : column}) > 0`).join(' OR ')})`)
         params.push(...columns.map(() => filters.search))

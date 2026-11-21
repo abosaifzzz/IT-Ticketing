@@ -13,7 +13,7 @@ const { parse } = createRequire(new URL('../../backend/package.json', import.met
 import { createPool } from '../../backend/src/db/pool.js'
 import { createMySqlUserRepository } from '../../backend/src/repositories/mysqlUserRepository.js'
 import { createMySqlSessionRepository } from '../../backend/src/repositories/mysqlSessionRepository.js'
-import { createLocalAccountService } from '../../backend/src/auth/localAccountService.js'
+import { createLocalAccountService } from '../../backend/test/support/accounts.js'
 import { createLocalPasswordProvider } from '../../backend/src/auth/localPasswordProvider.js'
 import { createAuthService } from '../../backend/src/auth/authService.js'
 import { createMySqlTicketRepository } from '../../backend/src/repositories/mysqlTicketRepository.js'
@@ -21,8 +21,9 @@ import { createMySqlDashboardRepository } from '../../backend/src/repositories/m
 import { createMySqlReferenceRepository } from '../../backend/src/repositories/mysqlReferenceRepository.js'
 import { createMySqlItUserRepository } from '../../backend/src/repositories/mysqlItUserRepository.js'
 import { createApp } from '../../backend/src/app.js'
+import { createProfileRepository } from '../../backend/src/auth/profiles.js'
 
-const accounts = [], pending = new Map()
+const accounts = [], pending = new Map(), network = []
 const password = 'Fictional-' + randomBytes(24).toString('hex')
 let pool, api, vite, chrome, profile, sequence = 0, buffer = ''
 let apiFailure = false, failLogin = false, failLogout = false, meDelay = 0
@@ -34,9 +35,9 @@ try {
   for (const role of ['employee', 'technician', 'manager']) accounts.push(await provision.create({ email: 'frontend-' + role + '-' + randomUUID() + '@demo.example', fullName: 'Fictional ' + role, role, password }))
   const auth = createAuthService({ provider: await createLocalPasswordProvider(users), sessions: createMySqlSessionRepository(pool) })
   let origin
-  const app = createApp({ notificationRepository:createMySqlNotificationRepository(pool), authService: {
+  const app = createApp({ profileRepository: createProfileRepository(pool),  notificationRepository:createMySqlNotificationRepository(pool), authService: {
     async login(input) { if (failLogin) { const error = Error('Private'); error.code = 'ER_LOCK_WAIT_TIMEOUT'; throw error } return auth.login(input) },
-    async getUser(token) { if (meDelay) await new Promise((resolve) => setTimeout(resolve, meDelay)); if (apiFailure) throw Error('Private'); return auth.getUser(token) },
+    async getUser(token, options) { if (meDelay) await new Promise((resolve) => setTimeout(resolve, meDelay)); if (apiFailure) throw Error('Private'); return auth.getUser(token, options) },
     async logout(token) { if (failLogout) throw Error('Private'); return auth.logout(token) },
   }, managementRepositories:{departments:createMySqlReferenceRepository(pool,'departments'),categories:createMySqlReferenceRepository(pool,'categories'),subcategories:createMySqlReferenceRepository(pool,'subcategories'),itUsers:createMySqlItUserRepository(pool)}, ticketRepository: createMySqlTicketRepository(pool), dashboardRepository: createMySqlDashboardRepository(pool), config: { nodeEnv: 'test', get appOrigin() { return origin } } })
   api = app.listen(0, '127.0.0.1'); await once(api, 'listening')
@@ -50,6 +51,7 @@ try {
     let index
     while ((index = buffer.indexOf('\0')) !== -1) {
       const value = JSON.parse(buffer.slice(0, index)); buffer = buffer.slice(index + 1)
+      if (value.method === 'Network.responseReceived' && value.params.response.url.includes('/api/')) network.push(value.params.response.status + ' ' + new URL(value.params.response.url).pathname)
       const callback = pending.get(value.id)
       if (callback) { pending.delete(value.id); value.error ? callback.reject(Error(value.error.message)) : callback.resolve(value.result) }
     }
@@ -62,6 +64,7 @@ try {
   })
   const { targetId } = await command('Target.createTarget', { url: 'about:blank' })
   const { sessionId } = await command('Target.attachToTarget', { targetId, flatten: true })
+  await command('Network.enable', {}, sessionId)
   const evaluate = async (expression) => {
     const response = await command('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, sessionId)
     if (response.exceptionDetails) throw Error('Browser expression failed')
@@ -70,7 +73,8 @@ try {
   const waitFor = async (expression) => {
     const deadline = Date.now() + 15000
     while (Date.now() < deadline) { if (await evaluate(expression)) return; await new Promise((resolve) => setTimeout(resolve, 60)) }
-    throw Error('Browser condition timed out: ' + expression)
+    const page = await evaluate('location.pathname + " | " + document.body.innerText.replace(/\\s+/g," ").slice(-400) + " | alerts=" + Array.from(document.querySelectorAll("[role=alert],[role=status]")).map(x => x.textContent).join(" ; ")').catch(() => '?')
+    throw Error('Browser condition timed out: ' + expression + '; page=' + page + '; api=' + network.slice(-12).join(', '))
   }
   const navigate = async (path) => { await command('Page.navigate', { url: origin + path }, sessionId); await waitFor('!!document.querySelector("#root")') }
   const click = async (text) => evaluate('Array.from(document.querySelectorAll("button")).find(x => x.textContent.trim() === ' + JSON.stringify(text) + ')?.click()')

@@ -102,7 +102,7 @@ try {
       const privileges = target.mode === 'test' ? 'SELECT, INSERT, UPDATE, DELETE' : 'SELECT, INSERT, UPDATE'
       await admin.query(`GRANT ${privileges} ON \`${target.database}\`.\`${table}\` TO '${target.user}'@'127.0.0.1'`)
     }
-    await admin.query(`GRANT ${target.mode === 'test' ? 'SELECT, INSERT, UPDATE, DELETE' : 'SELECT, INSERT'} ON \`${target.database}\`.\`employee_directory\` TO '${target.user}'@'127.0.0.1'`)
+    await admin.query(`GRANT ${target.mode === 'test' ? 'SELECT, INSERT, UPDATE, DELETE' : 'SELECT, INSERT, UPDATE'} ON \`${target.database}\`.\`employee_directory\` TO '${target.user}'@'127.0.0.1'`)
     const connection = await mysql.createConnection({ ...base, database: target.database, user: target.user, password })
     for (const table of ['tickets', 'ticket_history']) {
       const privileges = target.mode === 'test' ? 'SELECT, INSERT, UPDATE, DELETE' : (table === 'tickets' ? 'SELECT, INSERT, UPDATE' : 'SELECT, INSERT')
@@ -144,7 +144,7 @@ try {
       await admin.query(`GRANT ${privileges} ON \`${target.database}\`.\`${table}\` TO '${target.user}'@'127.0.0.1'`)
     }
     for(const table of administrativeTables){
-      const privileges=target.mode==='test'?'SELECT, INSERT, UPDATE, DELETE':table==='admin_audit'?'SELECT, INSERT':'SELECT, INSERT, UPDATE'
+      const privileges=target.mode==='test'?'SELECT, INSERT, UPDATE, DELETE':table==='user_departments'?'SELECT, INSERT, UPDATE, DELETE':['admin_audit','user_roster_imports'].includes(table)?'SELECT, INSERT':'SELECT, INSERT, UPDATE'
       await admin.query(`GRANT ${privileges} ON \`${target.database}\`.\`${table}\` TO '${target.user}'@'127.0.0.1'`)
     }
     const migrationFiles=(await readdir(new URL('../db/migrations/',import.meta.url))).filter(n=>n.endsWith('.sql'))

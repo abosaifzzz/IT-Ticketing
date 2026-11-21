@@ -23,11 +23,12 @@ export function AuthProvider({ children }) {
       generation.current++
       if (mounted.current) setState({ session: null, status: 'ready', error: '' })
     })
+    const unsubscribeSetup = authService.subscribeSetupRequired(() => restore({ background: true }))
     restore()
     // Restore server-owned identity on returning to a tab; never read a stored API session.
     const focus = () => { if (authService.mode === 'api' && !actionPending.current) restore({ background: true }) }
     window.addEventListener('focus', focus)
-    return () => { mounted.current = false; unsubscribe(); window.removeEventListener('focus', focus) }
+    return () => { mounted.current = false; unsubscribe(); unsubscribeSetup(); window.removeEventListener('focus', focus) }
   }, [restore])
   const value = useMemo(() => ({
     ...state, user: state.session?.user ?? null, isAuthenticated: Boolean(state.session), mode: authService.mode, retry: restore,
@@ -49,6 +50,7 @@ export function AuthProvider({ children }) {
         if (mounted.current && run === generation.current) setState({ session: null, status: 'ready', error: '' })
       } finally { actionPending.current = false }
     },
+    clearSession() { generation.current++; setState({ session: null, status: 'ready', error: '' }) },
   }), [state, restore])
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

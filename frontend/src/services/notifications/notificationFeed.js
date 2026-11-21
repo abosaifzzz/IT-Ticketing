@@ -17,8 +17,8 @@ export function createNotificationFeed({api,onChange,onSound=()=>{},onSessionEnd
     const maximum=result.items.reduce((max,item)=>BigInt(item.createdRevision)>BigInt(max)?item.createdRevision:max,baseline??'0')
     baseline=maximum
     emit({items:result.items,revision:result.revision,unreadCount:Number(result.unreadCount),status:'ready',error:null})
-    const sound=fresh.some(item=>item.type==='ticket_assignment')?'assignment':fresh.some(item=>item.type==='new_ticket')?'new_ticket':null
-    if(sound)onSound(sound)
+    const audible=fresh.find(item=>item.type==='ticket_assignment')??fresh.find(item=>item.type==='new_ticket')
+    if(audible)onSound(audible.type==='ticket_assignment'?'assignment':'new_ticket',audible.id)
    }catch(error){if(!stopped&&!controller.signal.aborted)emit({status:snapshot.revision===null?'error':'ready',error})}
    finally{loading=null;if(again&&!stopped){again=false;refresh()}}
   })()

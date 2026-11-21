@@ -11,7 +11,7 @@ export const portalRoutes = [
   },
   {
     role: 'employee', basePath: '/employee', label: 'بوابة الموظف', shortLabel: 'موظف', description: 'أنشئ طلبات الدعم وتابع حالتها بسهولة', pages: [
-      { path: 'new-ticket', label: 'إنشاء طلب', description: 'تسجيل طلب شخصي أو بالنيابة عن موظف آخر' },
+      { path: 'new-ticket', label: 'إنشاء طلب', description: 'تسجيل طلب دعم شخصي' },
       { path: 'tickets', label: 'طلباتي', description: 'البحث في جميع الطلبات ومتابعة حالتها' },
     ]
   },
@@ -19,7 +19,6 @@ export const portalRoutes = [
     role: 'technician', basePath: '/technician', label: 'بوابة مهندس تكنولوجيا المعلومات', shortLabel: 'مهندس', description: 'إدارة المهام الهندسية والأصول المسندة', pages: [
       { path: 'tickets', label: 'جميع التذاكر', description: 'عرض جميع البلاغات ومتابعة التذاكر المسندة إليك' },
       { path: 'manual-ticket', label: 'بلاغ يدوي', description: 'تسجيل بلاغ وارد من موظف أو الإدارة العليا' },
-      { path: '/it/employees', label: 'دليل الموظفين', description: 'إضافة الموظفين والبحث في بياناتهم' },
       { path: '/it/assets', label: 'الأصول التقنية', description: 'إدارة الأجهزة والمعدات المستخدمة والاحتياطية وحالتها الفنية' },
     ]
   },
@@ -27,7 +26,6 @@ export const portalRoutes = [
     role: 'manager', basePath: '/manager', label: 'بوابة مدير تكنولوجيا المعلومات', shortLabel: 'مدير', description: 'الإشراف على أداء الدعم وموارد القسم', pages: [
       { path: 'tickets', label: 'جميع التذاكر', description: 'مراجعة جميع تذاكر الدعم' },
       { path: 'manual-ticket', label: 'بلاغ يدوي', description: 'تسجيل بلاغ وارد من موظف أو الإدارة العليا' },
-      { path: '/it/employees', label: 'دليل الموظفين', description: 'إضافة الموظفين والبحث في بياناتهم' },
       { path: 'technicians', label: 'إدارة المهندسين', description: 'إدارة مهندسي فريق تكنولوجيا المعلومات' },
       { path: 'fault-categories', label: 'تصنيفات الأعطال', description: 'إدارة أنواع وتصنيفات الأعطال' },
       { path: 'departments', label: 'إدارة الأقسام', description: 'إدارة أقسام المركز المستخدمة في النظام' },

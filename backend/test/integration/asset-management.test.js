@@ -10,7 +10,7 @@ import {testEnvironment} from '../support/database.js'
 import {createPool} from '../../src/db/pool.js'
 import {createMySqlUserRepository} from '../../src/repositories/mysqlUserRepository.js'
 import {createMySqlSessionRepository} from '../../src/repositories/mysqlSessionRepository.js'
-import {createLocalAccountService} from '../../src/auth/localAccountService.js'
+import {createLocalAccountService} from '../support/accounts.js'
 import {createLocalPasswordProvider} from '../../src/auth/localPasswordProvider.js'
 import {createAuthService} from '../../src/auth/authService.js'
 import {createMySqlReferenceRepository} from '../../src/repositories/mysqlReferenceRepository.js'
@@ -73,4 +73,38 @@ test('every compatibility asset mutation admits both IT roles and denies employe
   }
  }
  for(const role of ['technician','manager'])for(const format of ['csv','xlsx','pdf'])assert.equal((await http('/reports/assets?format='+format,{role})).status,200)
+})
+
+test('engineers link registry assets to their own open tickets and IT sees them on ticket details', async () => {
+  const { createMySqlTicketRepository } = await import('../../src/repositories/mysqlTicketRepository.js')
+  const { createMySqlTicketWorkflowRepository } = await import('../../src/repositories/mysqlTicketWorkflowRepository.js')
+  const { ticketInput } = await import('../../src/tickets/validation.js')
+  const tickets = createMySqlTicketRepository(pool), workflow = createMySqlTicketWorkflowRepository(pool)
+  const other = await createLocalAccountService(createMySqlUserRepository(pool)).create({ email: 'am-other-' + suffix + '@demo.example', fullName: 'Fictional other engineer', role: 'technician', password })
+  const { item: ticket } = await tickets.create(ticketInput({ requesterType: 'it_internal', title: 'Asset link ' + suffix, description: 'Fictional task', assignedTechnicianId: accounts.technician.id }, accounts.manager), accounts.manager)
+  try {
+    const unit = await run('assets', asset())
+    await run('ticketLink', { assetId: unit.id, ticketId: ticket.id }, 'technician')
+    // Retrying the same link is harmless.
+    await run('ticketLink', { assetId: unit.id, ticketId: ticket.id }, 'technician')
+    const details = await tickets.getById(ticket.id, accounts.technician)
+    assert.equal(details.linkedAssets.length, 1)
+    assert.equal(details.linkedAssets[0].id, unit.id)
+    assert.equal(details.linkedAssets[0].linkedByName, accounts.technician.fullName)
+    // An engineer who is not assigned cannot link assets to the ticket.
+    await assert.rejects(repo.execute('ticketLink', { clientRequestId: key(), assetId: unit.id, ticketId: ticket.id }, { ...other, role: 'technician' }), { status: 403 })
+    // An asset already in an employee's custody cannot be linked to the ticket.
+    const held = await run('assets', asset())
+    await run('simpleAssetCustody', { id: held.id, action: 'ASSIGN', locationId: room.id, custodianType: 'employee', custodianId: employee.id }, 'technician')
+    await assert.rejects(run('ticketLink', { assetId: held.id, ticketId: ticket.id }, 'technician'), { status: 409 })
+    assert.equal((await tickets.getById(ticket.id, accounts.technician)).linkedAssets.length, 1)
+    // Closed tickets no longer accept new links.
+    await workflow.execute(ticket.id, 'status', { status: 'resolved', text: 'Fictional solution' }, accounts.technician)
+    await assert.rejects(run('ticketLink', { assetId: (await run('assets', asset())).id, ticketId: ticket.id }, 'technician'), { status: 409 })
+  } finally {
+    await pool.execute('DELETE FROM am_ticket_links WHERE ticket_id=?', [ticket.id])
+    await pool.execute('DELETE FROM ticket_history WHERE ticket_id=?', [ticket.id])
+    await pool.execute('DELETE FROM tickets WHERE id=?', [ticket.id])
+    await pool.execute('DELETE FROM users WHERE id=?', [other.id])
+  }
 })

@@ -1,5 +1,13 @@
 # Backend — Node.js + MySQL
 
+Need a simple explanation of the databases and tables? See [the database guide and verified cleanup](docs/database-guide.md). Use `hospital_it_helpdesk_dev` for the local application; keep `hospital_it_helpdesk_test` for tests. The obsolete empty fresh-test database was removed on 2026-11-18.
+
+MiAdmin roster import completed locally: **342 employee login accounts**, four duplicate-username rows excluded at the owner's request, and 132 old directory records retired with history preserved. See [the verified import record](docs/miadmin-import.md).
+
+Account-based ticket identity, phone/multiple-department profiles, full first-login setup and reviewed roster replacement are documented in [the migration 018 contract](docs/account-profiles.md). This supersedes directory-based ordinary ticket reporter selection. The [separate frontend implementation prompt](docs/frontend-account-profiles-prompt.md) is provided for later execution; frontend files were not changed.
+
+Username onboarding, temporary first-login credentials, required password changes and Admin reset controls: [API contract and frontend prompt](docs/first-login-password.md). Migration 017 preserves existing accounts; no user roster is imported automatically.
+
 Independent system administration (`admin`, without manager inheritance) is documented in [Administration API and private setup](docs/administration.md). Migration 016 adds safe administration tables, restricted audit grants, protected account recovery, monitoring and encrypted backup jobs. No default administrator is created; HTTP restoration remains disabled.
 
 The preferred simple asset/type/group/custody API is now `/api/asset-management/simple`. See [the simple API contract](docs/simple-assets.md). Existing endpoints remain for compatibility; complex ledger, QR, approval and advanced-report workflows are not required by the simple module.
@@ -254,3 +262,11 @@ Engineers (`technician`) and Managers (`manager`) share full server-authorized a
 ### Simple asset quantities
 
 The simple asset API supports one nonserialized equipment record with `quantity` (default 1). Serialized types, including the configured PC cases, keep one device and serial per record. Migration 014 adds quantity safely; apply it with `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\migrate-local-db.ps1` and enter the administrator password only in its hidden terminal prompt. Existing records default to quantity 1. See [quantity and frontend integration](docs/simple-assets.md#quantity-and-serial-policy-2026-11-12).
+# Manual employee ticket ownership update (migration 019)
+
+Account-selected IT manual tickets now appear in the selected employee's account-scoped tickets; the IT creator remains recorded separately. Migration 019 backfills existing explicit account links without guessing ownership for historical name-only tickets. Apply with `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\migrate-local-db.ps1`, entering administrator credentials only in its hidden terminal prompt.
+
+IT user options include employees awaiting first-login setup. With no active department membership yet, IT must select an active department; optional `reporterPhone` supplies a ticket snapshot only when no saved phone exists. Disabled accounts are listed with their activity flag but cannot receive new tickets. Successful Admin reauthentication no longer consumes the failed-password allowance.
+
+Frontend handoff for these fixes, unified notification sound and coded Admin dialogs: [implementation prompt](docs/frontend-notifications-manual-tickets-admin-prompt.md). Frontend changes require a separate task.
+

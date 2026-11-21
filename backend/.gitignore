@@ -7,3 +7,7 @@ node_modules/
 
 var/
 *.bak.enc
+
+# Python bytecode cache
+__pycache__/
+*.pyc

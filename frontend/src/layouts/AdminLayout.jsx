@@ -19,7 +19,7 @@ export function AdminLayout(){
  useEffect(()=>appEvents.subscribe(EVENT_NAMES.ADMIN_PERMISSIONS_CHANGED,()=>refreshRoles()),[refreshRoles])
  const granted=new Set(roles.data?.items.find(item=>item.role==='admin')?.permissions??[])
  const portal=portalRoutes.find(item=>item.role==='admin')
- const links=[{path:'/admin',label:'لوحة التحكم',permission:'admin.dashboard.read'},...portal.pages.map(page=>({path:`/admin/${page.path}`,label:page.label,permission:permissions[page.path]}))].filter(link=>granted.has(link.permission))
+ const links=[{path:'/admin',label:'لوحة التحكم',permission:'admin.dashboard.read'},...portal.pages.map(page=>({path:`/admin/${page.path}`,label:page.label,permission:permissions[page.path]}))].filter(link=>granted.has(link.permission)).concat({path:'/profile',label:'ملفي الشخصي'})
  const signOut=async()=>{if(busy)return;setBusy(true);setError('');try{await logout();navigate('/login',{replace:true})}catch(failure){setError(failure.message)}finally{setBusy(false)}}
  if(roles.status==='loading')return <div className="min-h-screen bg-canvas p-8 text-ink" role="status">جارٍ التحقق من صلاحيات الإدارة...</div>
  if(roles.error)return <div className="min-h-screen bg-canvas p-8 text-ink" role="alert">{roles.error.status===403?'ليس لديك صلاحية لفتح وحدة الإدارة.':roles.error.message} <button className="text-primary-600" onClick={()=>roles.refresh()}>إعادة المحاولة</button></div>

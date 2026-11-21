@@ -10,6 +10,6 @@ export default defineConfig(({ mode, command }) => {
   if (mode === 'production' && env.VITE_AUTH_MODE && env.VITE_AUTH_MODE !== 'api') throw new Error('Production requires API authentication')
   return { resolve: { alias: command === 'build' ? [{find:/^.*\/(?:demoCredentials|mockAuthProvider)\.js$/,replacement:fileURLToPath(new URL('./src/services/auth/productionMockDisabled.js',import.meta.url))}] : [] }, plugins: [react(), tailwindcss(), productionGuard()], build: { target: 'es2022' }, server: {
     host: 'localhost', port: 5173, strictPort: true, watch: { ignored: ['**/artifacts.local/**'] },
-    proxy: { '/api': { target: env.API_PROXY_TARGET || 'http://127.0.0.1:3001', changeOrigin: false, configure: configureApiProxy } },
+    proxy: { '/api': { target: env.API_PROXY_TARGET || 'http://127.0.0.1:3001', changeOrigin: false, xfwd: true, configure: configureApiProxy } },
   } }
 })

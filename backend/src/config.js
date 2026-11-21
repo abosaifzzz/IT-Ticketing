@@ -24,6 +24,8 @@ export function loadConfig() {
     nodeEnv,
     port: integer('PORT', 3001),
     appOrigin,
+    // Express trust-proxy setting. Default: only same-machine proxies. Override with TRUST_PROXY (e.g. a proxy subnet).
+    trustProxy: process.env.TRUST_PROXY || "loopback",
     database: {
       host: required('DB_HOST'),
       port: integer('DB_PORT', 3306),

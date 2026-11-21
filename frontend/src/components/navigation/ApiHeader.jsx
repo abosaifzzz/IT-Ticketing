@@ -20,7 +20,7 @@ export function ApiHeader({ portal }) {
   const [theme, setTheme] = useState(() => themeService.getActiveTheme())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const links = [{ path: portal.basePath, label: 'لوحة التحكم', end: true }, ...portal.pages.map((page) => ({ ...page, path: page.path.startsWith('/') ? page.path : `${portal.basePath}/${page.path}` }))]
+  const links = [{ path: portal.basePath, label: 'لوحة التحكم', end: true }, ...portal.pages.map((page) => ({ ...page, path: page.path.startsWith('/') ? page.path : `${portal.basePath}/${page.path}` })), { path: '/profile', label: 'ملفي الشخصي' }]
 
   useEffect(() => {
     const close = (event) => {

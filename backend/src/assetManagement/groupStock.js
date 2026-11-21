@@ -60,16 +60,18 @@ export async function addStock(c,actor,parent,source,own,notes) {
   if(own.custodian_type!=='none')return simpleAsset(await allocate(c,actor,parent,row,own,parent.location_id,notes))
   return {...simpleAsset(source),quantity:1,componentId:row.id,stockAssetId:source.id,availableQuantity:source.quantity,pending:true,groupId:parent.id}
 }
-async function returnedStock(c,actor,unit,condition,locationId,notes) {
+// Returns an issued unit (any quantity) to its warehouse stock record, or to a new stock record
+// when the condition or location differs.
+export async function returnedStock(c,actor,unit,condition,locationId,notes) {
   const source=await one(c,'am_assets',unit.source_asset_id)
   // Never combine different conditions or silently change a warehouse record's condition.
   const matches=source.is_stock&&!source.archived_at&&source.operational_status!=='RETIRED'&&source.custodian_type==='none'&&!source.workstation_id&&
     source.category_id===unit.category_id&&source.brand===unit.brand&&source.model===unit.model&&simpleCondition(source)===condition&&source.location_id===locationId
   if(matches) {
-    if(source.quantity>=1000000)bad('Warehouse quantity limit reached',409)
-    return saveAsset(c,actor,source,{quantity:source.quantity+1},'GROUP_STOCK_RETURN',notes)
+    if(source.quantity+unit.quantity>1000000)bad('Warehouse quantity limit reached',409)
+    return saveAsset(c,actor,source,{quantity:source.quantity+unit.quantity},'GROUP_STOCK_RETURN',notes)
   }
-  return createAsset(c,actor,{categoryId:unit.category_id,brand:unit.brand,model:unit.model,serialNumber:'',quantity:1,
+  return createAsset(c,actor,{categoryId:unit.category_id,brand:unit.brand,model:unit.model,serialNumber:'',quantity:unit.quantity,
     isStock:true,sourceAssetId:source.id,usageCondition:condition==='NEW'?'NEW':'USED',...{
       technicalCondition:condition==='OUT_OF_SERVICE'?'UNREPAIRABLE':'GOOD',operationalStatus:condition==='OUT_OF_SERVICE'?'RESERVED':'AVAILABLE'},
     locationId,custodianType:'none',employeeId:null,departmentId:null,receivedDate:null,supplier:'',notes:unit.notes},{simple:true})

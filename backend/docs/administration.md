@@ -1,5 +1,9 @@
 # Independent system administration
 
+User contact/departments, editable usernames and the accepted `engineer` role alias are extended in [the current account-profile contract](account-profiles.md). Role changes now apply directly after Admin reauthentication; Admin password recovery and independent Admin permissions remain protected.
+
+Username onboarding and direct operational-account temporary resets are now supported by migration 017. See [first-login password contract and frontend prompt](first-login-password.md); these extend the original email-only provisioning flow below. Stored passwords remain unreadable.
+
 Migration `016_administration.sql` introduces the canonical `admin` role. It is a separate identity, with no inheritance from `manager`. Existing operational roles and their permissions remain unchanged. The backend enforces this boundary; frontend menus are insufficient.
 
 | Role | Administration | Operational tickets/assets/reports |
@@ -33,14 +37,15 @@ All paths below start with `/api/admin`. Every endpoint requires a current activ
 
 | Method | Path | Purpose / body |
 | --- | --- | --- |
-| POST | `/reauthenticate` | `{ password }`, returns `{ user }` and rotated cookie |
+| POST | `/reauthenticate` | `{ password }`, returns `{ user }` and rotated cookie; only failed confirmations consume the five-attempt/15-minute allowance |
 | GET | `/dashboard` | Account/session summary |
 | GET | `/users` | Search, role/activity filters and pagination |
 | GET | `/users/:id` | Sanitized account details |
-| POST | `/users` | `{ email, fullName, role }`; creates inactive account without credentials |
-| PATCH | `/users/:id` | `{ fullName?, isActive? }`; activity changes revoke sessions |
-| POST | `/users/:id/role-change` | `{ role, reason }`; 202 pending protected approval |
+| POST | `/users` | `{ email?, username?, fullName, role }`; username-based operational onboarding uses a temporary password and mandatory change; email-only creation remains inactive |
+| PATCH | `/users/:id` | One atomic account save: `{ fullName?, username?, phone?, departmentIds?, isActive?, role?, reason?, adminPassword? }`. `reason` is required with a changed `role`; `adminPassword` is required only when promoting to Admin. Profile contact and departments must be supplied together. Role, activity and profile changes revoke sessions. |
+| POST | `/users/:id/role-change` | `{ role, reason, adminPassword? }`; 200 with the updated account after an immediate audited change. `adminPassword` is required only for promotion to Admin. |
 | POST | `/users/:id/password-reset` | `{ reason }`; 202 pending private operator completion |
+| POST | `/users/:id/reset-temporary-password` | `{}`; direct operational-account reset, mandatory change and session revocation; Admin targets excluded |
 | POST | `/users/:id/revoke-sessions` | Empty body; invalidate all target sessions |
 | GET | `/requests` | Administrative request history |
 | GET | `/roles` | Effective administrative permissions and descriptive operational catalogue |
@@ -55,21 +60,23 @@ All paths below start with `/api/admin`. Every endpoint requires a current activ
 | POST | `/backups` | Empty body; 202 background encrypted snapshot job |
 | POST | `/backups/:id/restore` | Disabled; no safe offline recovery adapter exists |
 
-Use the existing API `id` UUID for account/request/job paths. Admin creation never accepts password/hash/session fields. Role changes cannot be smuggled through account updates. Operational role policies are not editable here; administrative permissions cannot grant tickets/assets access or administration access to other roles. Essential recovery permissions cannot be removed. Ordinary permission editing cannot enable restore.
+Use the existing API `id` UUID for account/request/job paths. Admin creation never accepts password/hash/session fields. Combined account updates validate and audit role changes under the same Admin permission and last-Admin safeguards as the dedicated endpoint. Operational role policies are not editable here; administrative permissions cannot grant tickets/assets access or administration access to other roles. Essential recovery permissions cannot be removed. Ordinary permission editing cannot enable restore.
 
 Settings sections are `identity` (hospitalName, systemName, timezone), `application` (supportEmail, defaultPageSize), `authentication` (adminSessionMinutes, recentAuthenticationMinutes), `notifications` (pollSeconds, realtimeEnabled), and `maintenance` (enabled, message). Authentication and maintenance settings are consumed by the backend. Identity/application/notification values are persisted configuration for client integration; changing notification settings does not currently reconfigure the existing delivery transport. Maintenance blocks operational APIs while leaving authentication, administration and health available.
 
 ## Provisioning and protected recovery
 
-Accounts created through the API are inactive and have no login credentials. Provision privately with `npm run user:password -- "user@example.test"`, then activate through the API. Directory employees remain separate from login accounts.
+Email-only accounts and Admin accounts created through the API are inactive and have no login credentials. Provision these privately with `npm run user:password -- "user@example.test"`, then activate through the API. Username-based operational accounts instead follow the mandatory first-login onboarding contract linked above. Directory employees remain separate from login accounts.
 
-Role changes require a second, trusted local operator step. Password-reset requests likewise expose no reset token or password through HTTP. After an out-of-band identity check:
+An authenticated Admin with `admin.users.update` can change another account's role directly after recent password reauthentication. The change is transactional, audited, revokes the target's sessions and cancels stale pending requests. Promotion to Admin requires a new strong password supplied privately to the new Admin. Self-role changes and removal of the last active Admin remain blocked. Role changes do not grant the acting Admin operational permissions.
+
+Admin password-reset requests still expose no reset token or password through HTTP. After an out-of-band identity check:
 
 ```powershell
 npm run admin:approve -- "<request UUID>"
 ```
 
-The command requires explicit `APPROVE` confirmation and privately prompts for a new password when needed. It rejects expired, reused or stale-role requests and revokes existing sessions. Admin promotion requires a new strong password. Reset requests expire after one hour; role-change requests after 24 hours. The singleton transaction guard and approval-time checks prevent concurrent actions from disabling or demoting the last active administrator. Self role changes are prohibited. Console activity is honestly recorded as a local operator action rather than fabricating an application user identity.
+The command requires explicit `APPROVE` confirmation and privately prompts for a new password when needed. It rejects expired, reused or stale requests and revokes existing sessions. Admin reset requests expire after one hour. Historical pending role-change requests from the earlier workflow may still be approved or cancelled; new role changes no longer create them. The singleton transaction guard protects the last active administrator. Console activity is recorded as a local operator action rather than fabricating an application user identity.
 
 ## Backups and audit security
 
@@ -81,10 +88,12 @@ Audit records retain actual actor identity, action, time, IP where valid, status
 
 ## Verification and remaining integration
 
-Run `npm run lint`, `npm test`, and `npm run test:integration`. Focused checks are `npm run test:integration:administration`. Tests use fictional accounts in the configured test database and clean up their fixtures. The administrative suite checks all role boundaries, independent role identity, strong passwords, short sessions, reauthentication/origin checks, inactivity/revocation, protected approvals, last-admin concurrency, settings, immutable restricted-runtime audit grants, monitoring and actual encrypted backup decryption/failure behavior.
+Run `npm run lint`, `npm test`, and `npm run test:integration`. Focused checks are `npm run test:integration:administration`. Tests use fictional accounts in the configured test database and clean up their fixtures. The administrative suite checks role boundaries, direct audited role changes, strong passwords, short sessions, reauthentication/origin checks, inactivity/revocation, protected Admin-password recovery, last-admin concurrency, settings, immutable restricted-runtime audit grants, monitoring and encrypted backup decryption/failure behavior.
 
 Implementation files: `src/administration/{policy,validation,audit,repository,operator,monitoring,backups,router}.js`; migration 016; `scripts/approve-admin-request.js`; administrative unit/integration tests. Existing authentication/session repositories, app/server wiring, dashboard/notification role guards, asset audit snapshots, provisioning/migration scripts, package commands and environment documentation were extended.
 
-Remaining work: an administrative frontend, choosing/provisioning the first real administrator, private backup configuration and recovery drills, a protected restore adapter, MFA, production TLS/proxy and shared rate-limit design, external monitoring and durable error collection, and delivery of reset credentials through an approved private operational process. In-memory monitoring/rate limits are per process. Local passing checks do not establish production readiness.
+Remaining work: choosing/provisioning the first real administrator, private backup configuration and recovery drills, a protected restore adapter, MFA, production TLS/proxy and shared rate-limit design, external monitoring and durable error collection, and delivery of reset credentials through an approved private operational process. In-memory monitoring/rate limits are per process. Local passing checks do not establish production readiness.
+
+On 2026-11-18, the direct Admin role-change contract passed backend lint, 49 unit tests, focused administration/profile integration tests and the complete 137-test integration suite against the designated local test database. Frontend lint, administration service tests and production build passed. No production account was changed by these tests.
 
 Local verification on 2026-11-14: lint passed; 47/47 unit tests passed; focused administration integration tests passed 14/14; the final complete database suite passed 126/126. An earlier complete run reported 125/126, but its truncated output did not retain the failing assertion. The captured rerun (`.integration-check.log`, ignored by Git) passed without a corresponding code fix; this remains an unexplained intermittent test result rather than a proven resolved defect. Migration 016 was applied through the private workflow after the operator confirmed completion; the live tests verified its schema and restricted audit grants.

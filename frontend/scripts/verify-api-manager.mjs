@@ -12,13 +12,16 @@ assert.deepEqual(calls.at(-1).options.body,{username:'fictional',fullName:'Ficti
 await service.save('fault-subcategories',{id:'sub',name:'Sub',categoryId:'parent',isActive:false,ticketCount:5})
 assert.equal(calls.at(-1).options.method,'PATCH');assert.deepEqual(calls.at(-1).options.body,{name:'Sub',categoryId:'parent',isActive:false})
 assert.throws(()=>service.records('invalid'))
-const form={requesterType:'employee',reporterEmployeeId:'employee-id',reporterName:' Fictional Reporter ',department:'dept',category:'cat',subcategory:'sub',employeeNumber:' E ',managementPosition:'',title:' Ticket ',description:' Details ',owner:'forged',assignedTechnicianId:''}
+const form={requesterType:'employee',reporterUserId:'user-id',departmentId:'dept',reporterName:' Fictional Reporter ',department:'dept',category:'cat',subcategory:'sub',employeeNumber:' E ',managementPosition:'',title:' Ticket ',description:' Details ',owner:'forged',assignedTechnicianId:''}
 await service.manual(form,'retry-id')
 assert.equal(calls.at(-1).options.body.assignedTechnicianId,undefined);assert.equal(calls.at(-1).options.body.owner,undefined)
-assert.equal(calls.at(-1).options.body.reporterEmployeeId,'employee-id');assert.equal(calls.at(-1).options.body.reporterName,undefined);assert.equal(calls.at(-1).options.body.title,'Details')
+assert.equal(calls.at(-1).options.body.reporterUserId,'user-id');assert.equal(calls.at(-1).options.body.departmentId,'dept');assert.equal(calls.at(-1).options.body.reporterName,undefined);assert.equal(calls.at(-1).options.body.title,'Details')
 await service.manual({...form,assignedTechnicianId:'active-unavailable'},'retry-id-2')
 assert.equal(calls.at(-1).options.body.assignedTechnicianId,'active-unavailable')
 assert.equal(calls.at(-1).options.body.clientRequestId,'retry-id-2')
+// IT tickets: no requester, department or contact fields, engineer required.
+await service.manual({...form,requesterType:'it_internal',assignedTechnicianId:'engineer-id',anydeskId:''},'it-ticket')
+{const body=calls.at(-1).options.body;assert.equal(body.requesterType,'it_internal');assert.equal(body.assignedTechnicianId,'engineer-id');for(const key of ['reporterUserId','departmentId','reporterName','managementPosition','reporterPhone','anydeskId','categoryId','subcategoryId'])assert.equal(body[key],undefined,key)}
 await service.report({dateFrom:'2026-01-01',dateTo:'2026-01-31',limit:10,engineer:'forged'})
 assert.doesNotMatch(calls.at(-1).path,/engineer|forged/)
 await service.exportReport({dateFrom:'2026-01-01',dateTo:'2026-01-31',limit:10})

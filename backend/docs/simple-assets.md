@@ -198,3 +198,12 @@ Frontend integration: the current `TrackedAssetFormPage.jsx` already provides th
 
 
 Quantity verification on 2026-11-12: migration 014 quantity columns/defaults verified in development and test on MySQL 8.0.46 port 3307; the two development assets retained quantity 1. Lint and 42/42 unit tests passed; all 106/106 live-database integration tests passed, including quantity persistence/retry, both IT roles, serialized-device isolation, batch custody, optimistic concurrency, dashboard totals, SQL constraints and compatibility guards. No development assets or login accounts were created by these tests. All test fixtures were cleaned up. Frontend code was inspected for the quantity payload but was not edited or browser-tested in this backend task.
+
+## Issuing and receiving warehouse stock (2026-11-21)
+
+This supersedes the earlier rule that custody applies to every unit of a multi-unit record.
+
+- `POST /assets/:id/custody` with `action: ASSIGN` on a stock record (`isStock`, e.g. 10 keyboards) accepts optional `quantity` (default 1). It reduces the stock record by that number and creates a separate held record (`sourceAssetId` = the stock record) in the chosen employee/department custody. The response is the held record plus `issuedFromStockId`. Asking for more than is available returns 409. Stock records can never be transferred or returned as a whole. A stock record may reach quantity 0 and remain for restocking.
+- `RETURN` on a held record merges its units back into the original stock record when type/brand/model/condition/location match (otherwise into a new stock record) and archives the held record. The response is the stock record plus `mergedFromAssetId`.
+- `POST /assets/:id/receive` with `quantity` (and optional `notes`) adds units to an unassigned, ungrouped, unserialized record and marks it as stock. Serialized devices (e.g. PC cases) are still registered one record each.
+- Movements: STOCK_ISSUE, ASSIGN, MERGE_TO_WAREHOUSE, GROUP_STOCK_RETURN, STOCK_RECEIVE.

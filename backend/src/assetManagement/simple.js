@@ -1,4 +1,4 @@
-import {components,trackComponent,endComponent,addStock,allocate,returnGroup,returnCondition,returnConditions,replacePending} from './groupStock.js'
+import {components,trackComponent,endComponent,addStock,allocate,returnGroup,returnCondition,returnConditions,replacePending,returnedStock} from './groupStock.js'
 import {serialFor} from './serial.js'
 import { randomUUID } from 'node:crypto'
 import { str, id, reqId, choice, boolean, integer, normalizedSerial, bad } from './validation.js'
@@ -168,6 +168,18 @@ export function simpleHandlers() {
           model: b.model ?? asset.model, ...serial, quantity, is_stock:asset.is_stock||quantity>1, notes: b.notes ?? asset.notes }, 'UPDATE', b.notes)
         return simpleAsset(after)
       } },
+    // Receive more units into a quantity record (e.g. a new box of mice). Serialized devices are added one record each.
+    simpleAssetReceive: { spec: { id: reqId, quantity: integer(1, 1000000, 1), expectedVersion: version, notes: note }, async run(c, a, b) {
+      const asset = await lockedAsset(c, b.id)
+      checkVersion(asset, b.expectedVersion)
+      if (asset.workstation_id || asset.custodian_type !== 'none') bad('Add stock only to warehouse records', 409)
+      if (asset.source_asset_id && !asset.is_stock) bad('Add stock to the original warehouse record', 409)
+      const type = await one(c, 'am_categories', asset.category_id)
+      const quantity = asset.quantity + b.quantity
+      if (quantity > 1000000) bad('Warehouse quantity limit reached', 409)
+      serialFor(type, asset.serial_number, quantity)
+      return simpleAsset(await saveAsset(c, a, asset, { quantity, is_stock: true }, 'STOCK_RECEIVE', b.notes))
+    } },
     simpleAssetDelete: {  spec: { id: reqId, expectedVersion: version, notes: note }, async run(c, a, b) {
       const asset = await lockedAsset(c, b.id)
       checkVersion(asset, b.expectedVersion)
@@ -198,11 +210,29 @@ export function simpleHandlers() {
       return simpleAsset(await saveAsset(c, a, asset, state(b.condition, asset.custodian_type !== 'none'), action, b.notes))
     } },
     simpleAssetCustody: { spec: { id: reqId, action: choice(['ASSIGN', 'RETURN', 'TRANSFER']), locationId: id,
-      ...ownershipSpec, custodianType:choice(['employee','department','none']), returnCondition, repairConfirmed:optional(boolean), expectedVersion: version, notes: note }, async run(c, a, b) {
+      ...ownershipSpec, custodianType:choice(['employee','department','none']), quantity: optional(integer(1, 1000000)), returnCondition, repairConfirmed:optional(boolean), expectedVersion: version, notes: note }, async run(c, a, b) {
       const asset = await lockedAsset(c, b.id)
       checkVersion(asset, b.expectedVersion)
       if (asset.workstation_id) bad('Change custody through the entire group or remove this member first', 409)
       b.locationId=(await defaultWarehouse(c,b.locationId)).id
+      // Stock records (e.g. 10 keyboards) are never handed over whole: assigning issues the chosen
+      // number of units as a separate held record and reduces the warehouse quantity.
+      // (A stock record already handed over whole under the earlier rule keeps the normal transfer/return path.)
+      if (asset.is_stock && asset.custodian_type === 'none') {
+        if (b.action !== 'ASSIGN') bad('Warehouse stock is unassigned; assign units from it instead', 409)
+        const own = await simpleOwner(c, b.custodianType, b.custodianId)
+        if (own.custodian_type === 'none') bad('Choose an employee or department')
+        const count = b.quantity ?? 1
+        if (!['NEW', 'USED'].includes(simpleCondition(asset)) || asset.custodian_type !== 'none') bad('Only working warehouse stock can be issued', 409)
+        if (count > asset.quantity) bad('الكمية المتاحة في المخزن غير كافية.', 409)
+        await saveAsset(c, a, asset, { quantity: asset.quantity - count }, 'STOCK_ISSUE', b.notes)
+        const unit = await createAsset(c, a, { categoryId: asset.category_id, brand: asset.brand, model: asset.model, serialNumber: '', quantity: count,
+          isStock: false, sourceAssetId: asset.id, usageCondition: asset.usage_condition, technicalCondition: 'GOOD', operationalStatus: 'AVAILABLE',
+          locationId: asset.location_id, custodianType: 'none', employeeId: null, departmentId: null, receivedDate: null, supplier: '', notes: asset.notes }, { simple: true })
+        const issued = await saveAsset(c, a, unit, { ...own, location_id: b.locationId, ...state(simpleCondition(asset), true) }, 'ASSIGN', b.notes)
+        return { ...simpleAsset(issued), issuedFromStockId: asset.id }
+      }
+      if (b.quantity !== undefined && b.quantity !== asset.quantity) bad('Partial custody changes apply to warehouse stock only')
       if (b.action === 'ASSIGN' && asset.custodian_type !== 'none') bad('Use transfer for an assigned asset', 409)
       if (b.action === 'RETURN' && (b.custodianType !== 'none' || b.custodianId)) bad('Returns remove custody')
       const own = await simpleOwner(c, b.custodianType, b.custodianId)
@@ -215,8 +245,15 @@ export function simpleHandlers() {
       }
       if (b.returnCondition && ['NEW','USED'].includes(b.returnCondition) && !['NEW','USED'].includes(simpleCondition(asset)) && (!b.repairConfirmed||!b.notes)) bad('Confirm repair/inspection before returning a faulty unit as working')
       const returned=b.action==='RETURN'&&b.returnCondition?b.returnCondition:simpleCondition(asset)
-      return simpleAsset(await saveAsset(c, a, asset, { ...own, location_id: b.locationId,
-        ...state(returned, own.custodian_type !== 'none') }, b.action, b.notes))
+      const saved = await saveAsset(c, a, asset, { ...own, location_id: b.locationId,
+        ...state(returned, own.custodian_type !== 'none') }, b.action, b.notes)
+      // Units issued from warehouse stock merge back into it on return, so stock counts stay correct.
+      if (b.action === 'RETURN' && asset.source_asset_id && !asset.is_stock) {
+        const stock = await returnedStock(c, a, saved, returned, b.locationId, b.notes)
+        await saveAsset(c, a, saved, { archived_at: new Date() }, 'MERGE_TO_WAREHOUSE', b.notes)
+        return { ...simpleAsset(stock), mergedFromAssetId: asset.id }
+      }
+      return simpleAsset(saved)
     } },
     ...groupHandlers(),
   }

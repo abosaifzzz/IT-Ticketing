@@ -1,3 +1,4 @@
+import {seedFixtureProfiles,clearFixtureProfiles} from '../support/profiles.js'
 import assert from 'node:assert/strict'
 import { before, after, test } from 'node:test'
 import { readFile } from 'node:fs/promises'
@@ -17,7 +18,7 @@ import { createMySqlAssetRepository } from '../../src/repositories/mysqlAssetRep
 import { createMySqlNotificationRepository } from '../../src/repositories/mysqlNotificationRepository.js'
 import { createMySqlDashboardRepository } from '../../src/repositories/mysqlDashboardRepository.js'
 import { createMySqlReportRepository } from '../../src/repositories/mysqlReportRepository.js'
-import { createLocalAccountService } from '../../src/auth/localAccountService.js'
+import { createLocalAccountService } from '../support/accounts.js'
 import { createLocalPasswordProvider } from '../../src/auth/localPasswordProvider.js'
 import { createAuthService } from '../../src/auth/authService.js'
 import { createNotificationService } from '../../src/notifications/service.js'
@@ -48,11 +49,13 @@ before(async () => {
     departments.push(await managementRepositories.departments.save({ name: `Audit department ${i} ${suffix}`, isActive: true }))
     categories.push(await managementRepositories.categories.save({ name: `Audit category ${i} ${suffix}`, isActive: true }))
   }
+  await seedFixtureProfiles(pool,accounts,departments)
 })
 after(async () => {
   app?.locals.closeNotificationStreams?.()
   if (server) await new Promise((resolve) => server.close(resolve))
   if (pool) {
+      await clearFixtureProfiles(pool,accounts)
     try {
       // Cleanup uses the separate test account. Runtime cannot delete immutable history.
       await pool.execute('UPDATE tickets SET related_asset_id = NULL WHERE related_asset_id IN (SELECT asset_id FROM assets WHERE name = ?)', [`Audit asset ${suffix}`])
@@ -72,7 +75,7 @@ async function request(path, { role = 'manager', method = 'GET', body, cookie = 
 }
 async function json(path, options) { const response = await request(path, options); assert.equal(response.status, 200); return response.json() }
 async function createTicket(role = 'employee', extra = {}) {
-  const response = await request('/tickets', { role, method: 'POST', body: { reporterName: 'Fictional manual name', departmentId: departments[0].id, categoryId: categories[0].id, title: `Audit ${suffix}`, description: 'Fictional details', ...extra } })
+  const response = await request('/tickets', { role, method: 'POST', body: { ...(role==='manager'||role==='engineer'?{reporterUserId:accounts.employee.id}:{}),reporterName: 'Fictional manual name', departmentId: departments[0].id, categoryId: categories[0].id, title: `Audit ${suffix}`, description: 'Fictional details', ...extra } })
   assert.equal(response.status, 201); return (await response.json()).item
 }
 
@@ -152,7 +155,8 @@ test('runtime permissions support inventory totals, linked-ticket ownership, wit
   const withdrawal = await json(`/assets/${asset.assetId}/withdraw`, { role: 'engineer', method: 'POST', body: { ticketId: ticket.id } })
   assert.equal(withdrawal.asset.quantity, 1)
   assert.equal((await json(`/tickets?relatedAssetId=${asset.assetId}`)).items[0].id, ticket.id)
-  assert.equal((await json(`/tickets?relatedAssetId=${asset.assetId}`, { role: 'employee' })).total, 0)
+  const owned = await json(`/tickets?relatedAssetId=${asset.assetId}`, { role: 'employee' })
+  assert.equal(owned.total, 1); assert.equal(owned.items[0].id, ticket.id)
   assert.equal((await json(`/tickets?relatedAssetId=${asset.assetId}`, { role: 'engineerB' })).total, 0)
   assert.equal((await json('/assets/statistics')).withdrawn, 1)
   assert.equal((await request('/assets/export.xlsx', { role: 'engineer' })).status, 200)

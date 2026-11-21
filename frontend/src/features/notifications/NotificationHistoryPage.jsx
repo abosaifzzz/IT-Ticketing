@@ -60,8 +60,8 @@ function MockNotificationHistoryPage() {
         <div className="flex flex-wrap gap-2">
           <Button variant="secondary" onClick={() => notificationSoundService.setEnabled(!soundSettings.enabled)}>{soundSettings.enabled ? <Volume2 size={18} /> : <VolumeX size={18} />}{soundSettings.enabled ? 'إيقاف الأصوات' : 'تفعيل الأصوات'}</Button>
           <Button variant="secondary" disabled={!soundSettings.enabled} onClick={() => notificationSoundService.setMuted(!soundSettings.muted)}>{soundSettings.muted ? 'إلغاء الكتم' : 'كتم الأصوات'}</Button>
-          <Button variant="secondary" onClick={() => notificationSoundService.preview('new_ticket')}><Volume2 size={18} /> تجربة صوت بلاغ جديد</Button>
-          <Button variant="secondary" onClick={() => notificationSoundService.preview('assignment')}><Volume2 size={18} /> تجربة صوت الإسناد</Button>
+          <Button variant="secondary" disabled={!soundSettings.enabled || soundSettings.muted} onClick={() => notificationSoundService.preview('new_ticket')}><Volume2 size={18} /> تجربة صوت بلاغ جديد</Button>
+          <Button variant="secondary" disabled={!soundSettings.enabled || soundSettings.muted} onClick={() => notificationSoundService.preview('assignment')}><Volume2 size={18} /> تجربة صوت الإسناد</Button>
         </div>
       </div>
     </section>

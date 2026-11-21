@@ -13,7 +13,7 @@ export function hashSessionToken(token) {
 }
 
 function publicUser(user) {
-  return { id: user.id, username: user.email, name: user.full_name, role: user.role, roleLabel: roleLabels[user.role] }
+  return { id: user.id, username: user.username??user.email, name: user.full_name, role: user.role, roleLabel: roleLabels[user.role],mustChangePassword:Boolean(user.must_change_password),mustCompleteProfile:Boolean(user.must_complete_profile) }
 }
 
 export function createAuthService({ provider, sessions,administrationPolicy }) {
@@ -29,8 +29,9 @@ export function createAuthService({ provider, sessions,administrationPolicy }) {
       if (created === false) return null
       return { token, user: publicUser(user), expiresAt }
     },
-    async getUser(token) {
-      return (await this.getSessionInfo(token))?.user??null
+    async getUser(token,{allowPasswordChange=false}={}) {
+      const user=(await this.getSessionInfo(token))?.user??null
+      return (user?.mustChangePassword||user?.mustCompleteProfile)&&!allowPasswordChange?null:user
     },
     async getSessionInfo(token) {
       if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null
@@ -55,13 +56,20 @@ export function createAuthService({ provider, sessions,administrationPolicy }) {
       await this.logout(token)
       return next
     },
+    async changePassword(token,currentPassword,newPassword,profile) {
+      const user=await this.getUser(token,{allowPasswordChange:true})
+      if(!user)return false
+      if(!provider.changePassword)throw new Error('Password change is unavailable for this identity provider')
+      await provider.changePassword({identifier:user.username,currentPassword,newPassword,profile})
+      return true
+    },
     async logout(token) {
       if (typeof token === 'string' && /^[A-Za-z0-9_-]{43}$/.test(token)) {
         await sessions.delete(hashSessionToken(token))
       }
     },
     async logoutAll(token) {
-      const user = await this.getUser(token)
+      const user = await this.getUser(token,{allowPasswordChange:true})
       if (!user) return false
       await sessions.deleteForUser(user.id)
       return true

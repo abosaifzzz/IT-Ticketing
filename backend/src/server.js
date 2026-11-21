@@ -1,3 +1,4 @@
+import {createProfileRepository} from './auth/profiles.js'
 import {createAdministrationRepository} from './administration/repository.js'
 import {createAssetManagementRepository} from './assetManagement/repository.js'
 import { loadConfig } from './config.js'
@@ -36,7 +37,7 @@ try {
     itUsers: createMySqlItUserRepository(pool),
     employees: createMySqlEmployeeDirectoryRepository(pool),
   }
-  const app = createApp({ authService, config,administrationRepository, managementRepositories, ticketRepository: createMySqlTicketRepository(pool, { notifications }), ticketWorkflowRepository: createMySqlTicketWorkflowRepository(pool, { notifications }), assetRepository: createMySqlAssetRepository(pool), assetManagementRepository:createAssetManagementRepository(pool), notificationRepository: createMySqlNotificationRepository(pool), reportRepository: createMySqlReportRepository(pool), dashboardRepository: createMySqlDashboardRepository(pool) })
+  const app = createApp({ authService, config,administrationRepository,profileRepository:createProfileRepository(pool), managementRepositories, ticketRepository: createMySqlTicketRepository(pool, { notifications }), ticketWorkflowRepository: createMySqlTicketWorkflowRepository(pool, { notifications }), assetRepository: createMySqlAssetRepository(pool), assetManagementRepository:createAssetManagementRepository(pool), notificationRepository: createMySqlNotificationRepository(pool), reportRepository: createMySqlReportRepository(pool), dashboardRepository: createMySqlDashboardRepository(pool) })
   const server = app.listen(config.port, () => console.log(`API listening on port ${config.port}`))
 
   async function shutdown() {

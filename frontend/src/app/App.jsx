@@ -9,6 +9,7 @@ import { ManualTicketPage } from '../features/shared/ManualTicketPage'
 import { EmployeeDirectoryPage } from '../features/shared/EmployeeDirectoryPage'
 import { HomeRedirect } from '../features/auth/HomeRedirect'
 import { LoginPage } from '../features/auth/LoginPage'
+import { AccountProfilePage } from '../features/auth/AccountProfilePage'
 import { ProtectedRoute } from '../features/auth/ProtectedRoute'
 import { ApiFeatureBoundary } from '../features/auth/ApiFeatureBoundary'
 import { UnauthorizedPage } from '../features/auth/UnauthorizedPage'
@@ -55,6 +56,7 @@ import { AdminSettingsPage } from '../features/admin/AdminSettingsPage'
 import { AdminBackupsPage } from '../features/admin/AdminBackupsPage'
 import { AdminMonitoringPage } from '../features/admin/AdminMonitoringPage'
 import { portalRoutes } from './routeConfig'
+import { Toaster } from '../components/feedback/Toaster'
 
 function AssetsListRedirect(){const {search}=useLocation();return <Navigate to={`/it/assets${search}`} replace/>}
 
@@ -66,6 +68,8 @@ function AppRoutes() {
   return <Routes>
     <Route path="/" element={<HomeRedirect />} />
     <Route path="/login" element={<LoginPage />} />
+    <Route path="/setup" element={authMode === 'api' ? <AccountProfilePage setup /> : <NotFoundPage />} />
+    <Route path="/profile" element={authMode === 'api' ? <AccountProfilePage /> : <NotFoundPage />} />
     <Route path="/unauthorized" element={<ProtectedRoute><UnauthorizedPage /></ProtectedRoute>} />
 
     <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']} apiReady><AdminLayout /></ProtectedRoute>}>
@@ -138,4 +142,4 @@ function AppRoutes() {
   </Routes>
 }
 
-export function App(){return authMode==='api'?<ApiNotificationsProvider><AppRoutes/></ApiNotificationsProvider>:<AppRoutes/>}
+export function App(){return <>{authMode==='api'?<ApiNotificationsProvider><AppRoutes/></ApiNotificationsProvider>:<AppRoutes/>}<Toaster/></>}

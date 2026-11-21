@@ -5,12 +5,13 @@ function toSession(data) {
   const user = data?.user
   if (!user || !Object.hasOwn(ROLE_DESTINATIONS, user.role) || ['id', 'username', 'name', 'roleLabel'].some((field) => typeof user[field] !== 'string' || !user[field])) throw new HttpError('بيانات الجلسة غير صالحة.', { code: 'response' })
   // Explicit allowlist: never retain unexpected token/password response fields.
-  return { provider: 'api', role: user.role, user: { id: user.id, username: user.username, name: user.name, role: user.role, roleLabel: user.roleLabel } }
+  return { provider: 'api', role: user.role, user: { id: user.id, username: user.username, name: user.name, role: user.role, roleLabel: user.roleLabel, mustChangePassword: user.mustChangePassword === true, mustCompleteProfile: user.mustCompleteProfile === true } }
 }
 export function createApiAuthProvider(client) {
   return {
     async login({ username, password }) {
-      return toSession(await client.request('/auth/login', { method: 'POST', body: { username: username.trim(), password }, anonymous: true }))
+      const identifier = username.trim()
+      return toSession(await client.request('/auth/login', { method: 'POST', body: { [identifier.includes('@') ? 'email' : 'username']: identifier, password }, anonymous: true }))
     },
     async restoreSession() {
       try { return toSession(await client.request('/auth/me', { anonymous: true })) }

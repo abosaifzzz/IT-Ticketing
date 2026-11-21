@@ -10,17 +10,16 @@ export function createEmployeeTicketApi(client) {
     list(filters = {}, signal) { return client.request('/tickets?' + query(filters), { signal }) },
     summary(signal) { return client.request('/dashboard', { signal }) },
     details(id, signal) { return item('/tickets/' + encodeURIComponent(id), { signal }) },
-    employeeOptions(search = '', page = 1, signal) {
-      return client.request('/employee-options?' + new URLSearchParams({ search: search.trim(), page: String(page) }), { signal })
-    },
     async options(signal) {
       const [departments, categories, subcategories] = await Promise.all(['/departments', '/fault-categories', '/fault-subcategories'].map((path) => client.request(path, { signal })))
       return { departments: departments.items, categories: categories.items.map((category) => ({ ...category, subcategories: subcategories.items.filter((sub) => sub.categoryId === category.id) })) }
     },
-    create(form, createdFor, clientRequestId) {
+    create(form, clientRequestId) {
       // Explicit allowlist. Ownership, source, status and actor fields are never submitted.
-      const body = { reporterEmployeeId: form.reporterEmployeeId, categoryId: form.category,
-        title: deriveTicketTitle(form.description), description: form.description.trim(), createdFor, clientRequestId,
+      const body = { categoryId: form.category,
+        title: deriveTicketTitle(form.description), description: form.description.trim(), clientRequestId,
+        ...(form.departmentId ? { departmentId: form.departmentId } : {}),
+        ...(form.anydeskId ? { anydeskId: form.anydeskId } : {}),
         ...(form.subcategory ? { subcategoryId: form.subcategory } : {}) }
       return item('/tickets', { method: 'POST', body })
     },

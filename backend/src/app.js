@@ -14,6 +14,7 @@ import { createAssetRouter } from "./assets/router.js";
 import { createNotificationRouter } from "./notifications/router.js";
 import { createReportRouter } from "./reports/router.js";
 import { createDashboardRouter } from "./dashboard/router.js";
+import {profileInput} from './auth/profiles.js';
 
 export function sessionCookieName(nodeEnv) {
   return nodeEnv === "production"
@@ -35,8 +36,12 @@ export function createApp({
   dashboardRepository,
   administrationRepository,
   backupService,
+  profileRepository,
 }) {
   const app = express();
+  // Trust X-Forwarded-For only when the immediate peer is a proxy on this machine (Vite or a
+  // local reverse proxy), so req.ip is the real browser address and cannot be spoofed remotely.
+  app.set("trust proxy", config.trustProxy ?? "loopback");
   const cookieName = sessionCookieName(config.nodeEnv);
   const cookieOptions = {
     httpOnly: true,
@@ -72,6 +77,13 @@ export function createApp({
   app.use("/api/asset-management", express.json({ limit: "8mb" }));
   app.use(express.json({ limit: "8kb" }));
   app.use(cookieParser());
+  app.use(async(req,res,next)=>{
+    if(!req.path.startsWith('/api/')||['/api/auth/login','/api/auth/me','/api/auth/change-password','/api/auth/complete-setup','/api/auth/setup-options','/api/auth/profile','/api/auth/logout','/api/auth/logout-all','/api/health'].includes(req.path))return next();
+    const user=await authService.getUser(req.cookies[cookieName],{allowPasswordChange:true});
+    if(user?.mustChangePassword)return res.status(403).json({error:'يجب تغيير كلمة المرور أولاً.',code:'PASSWORD_CHANGE_REQUIRED'});
+    if(user?.mustCompleteProfile)return res.status(403).json({error:'يجب إكمال بيانات الحساب أولاً.',code:'PROFILE_SETUP_REQUIRED'});
+    next();
+  });
   if(administrationRepository) app.use(async(req,res,next)=>{
     if(!req.path.startsWith('/api/')||req.path.startsWith('/api/admin/')||req.path.startsWith('/api/auth/')||req.path==='/api/health')return next();
     const policy=await administrationRepository.runtimePolicy();
@@ -133,7 +145,7 @@ export function createApp({
   });
 
   app.get("/api/auth/me", async (req, res) => {
-    const user = await authService.getUser(req.cookies[cookieName]);
+    const user = await authService.getUser(req.cookies[cookieName],{allowPasswordChange:true});
     if (!user)
       return res
         .status(401)
@@ -145,6 +157,40 @@ export function createApp({
     await authService.logout(req.cookies[cookieName]);
     res.clearCookie(cookieName, cookieOptions);
     return res.sendStatus(204);
+  });
+  if(profileRepository){
+    const setupUser=async(req)=>{
+      const user=await authService.getUser(req.cookies[cookieName],{allowPasswordChange:true});
+      if(!user)throw new ApiError(401,'يجب تسجيل الدخول.');
+      return user;
+    };
+    app.get('/api/auth/setup-options',async(req,res)=>{await setupUser(req);res.json(await profileRepository.options());});
+    app.get('/api/auth/profile',async(req,res)=>res.json({item:await profileRepository.get((await setupUser(req)).id)}));
+    app.patch('/api/auth/profile',async(req,res)=>{
+      const user=await setupUser(req);
+      if(user.mustChangePassword||user.mustCompleteProfile)throw new ApiError(403,'أكمل إعداد الحساب أولاً.');
+      res.json({item:await profileRepository.update(user.id,profileInput(req.body))});
+    });
+    app.post('/api/auth/complete-setup',loginLimit,async(req,res)=>{
+      const body=req.body;
+      if(!body||Object.keys(body).some(k=>!['currentPassword','newPassword','phone','departmentIds'].includes(k))||['currentPassword','newPassword'].some(k=>typeof body[k]!=='string'||!body[k]||Buffer.byteLength(body[k])>1024))throw new ApiError(400,'بيانات الإعداد غير صالحة.');
+      const profile=profileInput({phone:body.phone,departmentIds:body.departmentIds});
+      if(!await authService.changePassword(req.cookies[cookieName],body.currentPassword,body.newPassword,profile))throw new ApiError(401,'انتهت الجلسة.');
+      res.clearCookie(cookieName,cookieOptions);res.json({changed:true,setupCompleted:true,loginRequired:true});
+    });
+    app.get('/api/user-options',async(req,res)=>{
+      const user=await authService.getUser(req.cookies[cookieName]);
+      if(!user)throw new ApiError(401,'يجب تسجيل الدخول.');
+      res.json(await profileRepository.employeeOptions(req.query,user));
+    });
+  }
+  app.post('/api/auth/change-password',loginLimit,async(req,res)=>{
+    const body=req.body;
+    if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).some(k=>!['currentPassword','newPassword'].includes(k))||
+      ['currentPassword','newPassword'].some(k=>typeof body[k]!=='string'||!body[k]||Buffer.byteLength(body[k])>1024))throw new ApiError(400,'بيانات كلمة المرور غير صالحة.');
+    if(!await authService.changePassword(req.cookies[cookieName],body.currentPassword,body.newPassword))throw new ApiError(401,'انتهت الجلسة.');
+    res.clearCookie(cookieName,cookieOptions);
+    res.json({changed:true,loginRequired:true});
   });
   app.post("/api/auth/logout-all", async (req, res) => {
     if (req.body !== undefined && (!req.body || typeof req.body !== "object" || Array.isArray(req.body) || Object.keys(req.body).length)) return res.status(400).json({ error: "الطلب غير صالح." });

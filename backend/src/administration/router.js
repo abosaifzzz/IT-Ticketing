@@ -2,7 +2,7 @@ import {Router} from 'express'
 import {rateLimit} from 'express-rate-limit'
 import {fields} from '../management/validation.js'
 import {requireAdminIdentity} from './policy.js'
-import {accountCreate,accountUpdate,requestInput,permissionInput,settingInput,filters,noBody,bad,uuid} from './validation.js'
+import {accountCreate,accountUpdate,requestInput,roleChangeInput,permissionInput,settingInput,filters,noBody,bad,uuid} from './validation.js'
 
 export function createAdministrationRouter({authService,cookieName,cookieOptions,repository,monitoring,backups}) {
  const router=Router(),jobs=new Set()
@@ -17,7 +17,7 @@ export function createAdministrationRouter({authService,cookieName,cookieOptions
   next()
  })
  const writeLimit=rateLimit({windowMs:15*60000,limit:60,standardHeaders:'draft-8',legacyHeaders:false,keyGenerator:req=>req.user.id,message:{error:'Too many sensitive administrative requests'}})
- const reauthLimit=rateLimit({windowMs:15*60000,limit:5,standardHeaders:'draft-8',legacyHeaders:false,keyGenerator:req=>req.user.id,message:{error:'Too many authentication attempts'}})
+ const reauthLimit=rateLimit({windowMs:15*60000,limit:5,skipSuccessfulRequests:true,standardHeaders:'draft-8',legacyHeaders:false,keyGenerator:req=>req.user.id,message:{error:'Too many authentication attempts'}})
  router.use((req,res,next)=>['GET','HEAD'].includes(req.method)?next():writeLimit(req,res,next))
  const allow=(permission,recent=false)=>async(req,_res,next)=>{
   await repository.permission(req.user,permission)
@@ -38,8 +38,9 @@ export function createAdministrationRouter({authService,cookieName,cookieOptions
  router.get('/users/:id',allow('admin.users.read'),async(req,res)=>res.json({item:await repository.getUser(uuid(req.params.id),req.user)}))
  router.post('/users',allow('admin.users.create',true),async(req,res)=>res.status(201).json({item:await repository.createUser(accountCreate(req.body),req.user,req.ip)}))
  router.patch('/users/:id',allow('admin.users.update',true),async(req,res)=>res.json({item:await repository.updateUser(uuid(req.params.id),accountUpdate(req.body),req.user,req.ip)}))
- router.post('/users/:id/role-change',allow('admin.users.update',true),async(req,res)=>res.status(202).json({item:await repository.request(uuid(req.params.id),'ROLE_CHANGE',requestInput(req.body,true),req.user,req.ip),protectedApprovalRequired:true}))
+ router.post('/users/:id/role-change',allow('admin.users.update',true),async(req,res)=>res.json({item:await repository.changeRole(uuid(req.params.id),roleChangeInput(req.body),req.user,req.ip)}))
  router.post('/users/:id/password-reset',allow('admin.users.reset_password',true),async(req,res)=>res.status(202).json({item:await repository.request(uuid(req.params.id),'PASSWORD_RESET',requestInput(req.body),req.user,req.ip),privateOperatorCompletionRequired:true}))
+ router.post('/users/:id/reset-temporary-password',allow('admin.users.reset_password',true),async(req,res)=>{noBody(req.body);res.json({item:await repository.resetTemporaryPassword(uuid(req.params.id),req.user,req.ip)})})
  router.post('/users/:id/revoke-sessions',allow('admin.sessions.revoke',true),async(req,res)=>{noBody(req.body);res.json(await repository.revokeSessions(uuid(req.params.id),req.user,req.ip))})
  router.get('/requests',allow('admin.users.read'),async(req,res)=>res.json(await repository.requests(req.query,req.user)))
  router.get('/roles',allow('admin.roles.read'),async(req,res)=>{if(Object.keys(req.query).length)bad();res.json(await repository.roles(req.user))})

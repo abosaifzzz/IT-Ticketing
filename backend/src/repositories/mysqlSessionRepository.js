@@ -23,7 +23,7 @@ export function createMySqlSessionRepository(pool) {
     },
     async findUserByTokenHash(tokenHash) {
       const [rows] = await pool.execute(
-        `SELECT u.id, u.email, u.full_name, u.role, u.is_active,u.admin_password_verified, s.expires_at,s.created_at AS session_created_at
+        `SELECT u.id, u.email,u.username,u.must_change_password,u.must_complete_profile, u.full_name, u.role, u.is_active,u.admin_password_verified, s.expires_at,s.created_at AS session_created_at
          FROM auth_sessions s JOIN users u ON u.id = s.user_id
          WHERE s.token_hash = ? LIMIT 1`,
         [tokenHash],

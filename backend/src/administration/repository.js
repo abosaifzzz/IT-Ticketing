@@ -1,12 +1,14 @@
 import {randomUUID} from 'node:crypto'
 import {ApiError} from '../management/validation.js'
-import {requireAdminIdentity,adminPermissions,operationalPermissions} from './policy.js'
+import {requireAdminIdentity,adminPermissions,operationalPermissions,requireStrongAdminPassword} from './policy.js'
 import {recordAudit,decode,operationalAudit} from './audit.js'
 import {filters,bad,uuid,permissionInput} from './validation.js'
+import {hashPassword} from '../auth/passwords.js'
+import {readProfile,saveDepartments} from '../auth/profiles.js'
 
-const account=row=>({id:row.id,email:row.email,fullName:row.full_name,role:row.role,isActive:Boolean(row.is_active),authProvider:row.auth_provider,
+const account=row=>({id:row.id,email:row.email,username:row.username??row.email,phone:row.phone??null,mustCompleteProfile:Boolean(row.must_complete_profile),mustChangePassword:Boolean(row.must_change_password),passwordStatus:!row.password_hash?'NOT_PROVISIONED':row.must_change_password?'CHANGE_REQUIRED':'SET',fullName:row.full_name,role:row.role,isActive:Boolean(row.is_active),authProvider:row.auth_provider,
  lastLoginAt:row.last_login_at,createdAt:row.created_at,updatedAt:row.updated_at,provisioningRequired:row.auth_provider==='local'&&!row.password_hash})
-const columns='id,email,full_name,role,is_active,auth_provider,last_login_at,created_at,updated_at,password_hash,admin_password_verified'
+const columns='id,email,username,must_change_password,must_complete_profile,phone,full_name,role,is_active,auth_provider,last_login_at,created_at,updated_at,password_hash,password_changed_at,admin_password_verified'
 const publicRequest=row=>({id:row.id,type:row.type,targetId:row.target_id,requestedBy:row.requested_by,requestedRole:row.requested_role,status:row.status,reason:row.reason,createdAt:row.created_at,expiresAt:row.expires_at})
 export async function guard(c){await c.execute('SELECT id FROM admin_guard WHERE id=1 FOR UPDATE')}
 export async function lastAdmin(c,target,nextRole,nextActive) {
@@ -41,6 +43,22 @@ export function createAdministrationRepository(pool) {
   }
  }
  async function target(c,id){const [[row]]=await c.execute('SELECT '+columns+' FROM users WHERE id=? FOR UPDATE',[id]);if(!row)bad('Account not found',404);return row}
+ async function applyRoleChange(c,id,old,input,actor){
+  if(id===actor.id)bad('Administrators cannot change their own role',403)
+  if(old.role===input.role)bad('Role is unchanged',409)
+  await lastAdmin(c,old,input.role,Boolean(old.is_active))
+  if(input.role==='admin'&&old.auth_provider!=='local')bad('Admin promotion requires a local account',409)
+  if(input.role==='admin')requireStrongAdminPassword(input.adminPassword)
+  const promoting=input.role==='admin'
+  const passwordHash=promoting?await hashPassword(input.adminPassword):old.password_hash
+  const mustCompleteProfile=promoting?false:old.role==='admin'?true:Boolean(old.must_complete_profile)
+  const mustChangePassword=promoting?false:old.role==='admin'?true:Boolean(old.must_change_password)
+  await c.execute('UPDATE users SET role=?,password_hash=?,admin_password_verified=?,must_change_password=?,must_complete_profile=?,password_changed_at=?,updated_at=? WHERE id=?',[
+   input.role,passwordHash,promoting,mustChangePassword,mustCompleteProfile,promoting?new Date():old.password_changed_at,new Date(),id,
+  ])
+  await c.execute('DELETE FROM auth_sessions WHERE user_id=?',[id])
+  await c.execute("UPDATE admin_requests SET status='CANCELLED',completed_at=? WHERE target_id=? AND status='PENDING'",[new Date(),id])
+ }
  async function paginated(table,where,values,f,projection='*',order='created_at DESC,id DESC'){
   const clause=where.length?' WHERE '+where.join(' AND '):''
   const [[count]]=await pool.execute('SELECT COUNT(*) n FROM '+table+clause,values)
@@ -53,26 +71,53 @@ export function createAdministrationRepository(pool) {
   async runtimePolicy(){const [rows]=await pool.query("SELECT section,settings_data FROM admin_settings WHERE section IN ('authentication','maintenance')");return Object.fromEntries(rows.map(r=>[r.section,decode(r.settings_data)]))},
   async listUsers(query,actor){
    await permission(pool,actor,'admin.users.read');const f=filters(query,['role','isActive']),where=[],values=[]
-   if(f.role){if(!['employee','technician','manager','admin'].includes(f.role))bad();where.push('role=?');values.push(f.role)}
+   if(f.role){if(f.role==='engineer')f.role='technician';if(!['employee','technician','manager','admin'].includes(f.role))bad();where.push('role=?');values.push(f.role)}
    if(f.isActive!==undefined){if(!['true','false'].includes(f.isActive))bad();where.push('is_active=?');values.push(f.isActive==='true')}
-   if(f.search){where.push('(LOCATE(?,email)>0 OR LOCATE(?,full_name)>0)');values.push(f.search,f.search)}
+   if(f.search){where.push('(LOCATE(?,email)>0 OR LOCATE(?,full_name)>0 OR LOCATE(?,username)>0)');values.push(f.search,f.search,f.search)}
    if(f.from){where.push('created_at>=?');values.push(f.from)}if(f.to){where.push('created_at<DATE_ADD(?,INTERVAL 1 DAY)');values.push(f.to)}
-   const result=await paginated('users',where,values,f,columns);result.items=result.items.map(account);return result
+   const result=await paginated('users',where,values,f,columns);result.items=await Promise.all(result.items.map(async row=>({...account(row),...await readProfile(pool,row.id)})));return result
   },
-  async getUser(id,actor){await permission(pool,actor,'admin.users.read');const [[row]]=await pool.execute('SELECT '+columns+' FROM users WHERE id=?',[id]);if(!row)bad('Account not found',404);return account(row)},
+  async getUser(id,actor){await permission(pool,actor,'admin.users.read');const [[row]]=await pool.execute('SELECT '+columns+' FROM users WHERE id=?',[id]);if(!row)bad('Account not found',404);return {...account(row),...await readProfile(pool,id)}},
   async createUser(input,actor,ip){const id=randomUUID();return mutate(actor,'admin.users.create','users.create',id,ip,async c=>{
    const now=new Date()
-   await c.execute("INSERT INTO users(id,email,full_name,role,auth_provider,password_hash,is_active,created_at,updated_at) VALUES(?,?,?,?,'local',NULL,FALSE,?,?)",[id,input.email,input.fullName,input.role,now,now])
+   const temporary=Boolean(input.username)&&input.role!=='admin'
+   if(input.username){const [[collision]]=await c.execute('SELECT id FROM users WHERE email=? OR username=? LIMIT 1',[input.username,input.username]);if(collision)bad('Username already exists',409)}
+   await c.execute("INSERT INTO users(id,email,username,full_name,role,auth_provider,password_hash,is_active,must_change_password,created_at,updated_at) VALUES(?,?,?,?,?,'local',?,?,?,?,?)",[id,input.email,input.username??null,input.fullName,input.role,temporary?await hashPassword('123'):null,temporary,temporary,now,now])
+   await c.execute('UPDATE users SET must_complete_profile=? WHERE id=?',[input.role!=='admin',id])
    const after=account(await target(c,id));return {before:null,after,result:after}
   })},
-  async updateUser(id,input,actor,ip){return mutate(actor,input.isActive===false?'admin.users.disable':'admin.users.update','users.update',id,ip,async c=>{
-   if(input.fullName!==undefined)await permission(c,actor,'admin.users.update')
+  async resetTemporaryPassword(id,actor,ip){
+   const hash=await hashPassword('123')
+   return mutate(actor,'admin.users.reset_password','users.temporary_reset',id,ip,async c=>{
+    const old=await target(c,id)
+    if(old.role==='admin')bad('Use protected administrator recovery',403)
+    if(old.auth_provider!=='local')bad('Use the external identity provider',409)
+    await c.execute('UPDATE users SET password_hash=?,must_change_password=TRUE,password_changed_at=NULL,updated_at=? WHERE id=?',[hash,new Date(),id])
+    await c.execute('DELETE FROM auth_sessions WHERE user_id=?',[id])
+    return {before:{role:old.role},after:{requiresChange:true,sessionsRevoked:true},result:{id,mustChangePassword:true,sessionsRevoked:true}}
+   })
+  },
+  async updateUser(id,input,actor,ip){return mutate(actor,'admin.users.update','users.update',id,ip,async c=>{
    const old=await target(c,id),active=input.isActive??Boolean(old.is_active)
-   await lastAdmin(c,old,old.role,active)
-   if(active&&old.role==='admin'&&(!old.password_hash||!old.admin_password_verified))bad('Provision a strong administrator password privately before activation',409)
+   if(old.is_active&&!active)await permission(c,actor,'admin.users.disable')
+   await lastAdmin(c,old,input.roleChange?.role??old.role,active)
+   if(active&&(input.roleChange?.role??old.role)==='admin'&&!input.roleChange&&(!old.password_hash||!old.admin_password_verified))bad('Provision a strong administrator password privately before activation',409)
+   if(input.roleChange)await applyRoleChange(c,id,old,input.roleChange,actor)
    await c.execute('UPDATE users SET full_name=?,is_active=?,updated_at=? WHERE id=?',[input.fullName??old.full_name,active,new Date(),id])
-   if(input.isActive!==undefined)await c.execute('DELETE FROM auth_sessions WHERE user_id=?',[id])
-   const after=account(await target(c,id));return {before:account(old),after,result:after}
+   if(input.username!==undefined){
+    const [[collision]]=await c.execute('SELECT id FROM users WHERE id<>? AND (email=? OR username=?) LIMIT 1',[id,input.username,input.username])
+    if(collision)bad('Username already exists',409)
+    await c.execute('UPDATE users SET username=? WHERE id=?',[input.username,id])
+   }
+   if(input.profile){await saveDepartments(c,id,input.profile.departmentIds);await c.execute('UPDATE users SET phone=?,profile_completed_at=NOW(3),must_complete_profile=FALSE WHERE id=?',[input.profile.phone,id])}
+   if(input.isActive!==undefined||input.username!==undefined||input.profile)await c.execute('DELETE FROM auth_sessions WHERE user_id=?',[id])
+   const after={...account(await target(c,id)),...await readProfile(c,id)};return {before:account(old),after:{...after,...(input.roleChange?{roleChangeReason:input.roleChange.reason}: {})},result:after}
+  })},
+  async changeRole(id,input,actor,ip){return mutate(actor,'admin.users.update','users.role_change',id,ip,async c=>{
+   const old=await target(c,id)
+   await applyRoleChange(c,id,old,input,actor)
+   const after={...account(await target(c,id)),...await readProfile(c,id)}
+   return {before:{role:old.role},after:{role:after.role,reason:input.reason,sessionsRevoked:true},result:after}
   })},
   async request(id,type,input,actor,ip){return mutate(actor,type==='ROLE_CHANGE'?'admin.users.update':'admin.users.reset_password',type==='ROLE_CHANGE'?'users.role_change.request':'users.password_reset.request',id,ip,async c=>{
    const old=await target(c,id)

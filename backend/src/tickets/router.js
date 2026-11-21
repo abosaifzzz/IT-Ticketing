@@ -13,7 +13,7 @@ export function createTicketRouter({ authService, cookieName, repository, workfl
     next()
   })
   router.post('/', async (req, res) => {
-    const result = await repository.create(ticketInput(req.body, req.user), req.user)
+    const result = await repository.create(ticketInput(req.body, req.user), req.user, { clientIp: req.ip })
     res.status(result.created ? 201 : 200).json({ item: result.item })
   })
   router.get('/', async (req, res) => {

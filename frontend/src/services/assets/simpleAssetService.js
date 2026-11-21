@@ -8,7 +8,7 @@ export const simpleConditions = Object.freeze({NEW:'جديد', USED:'مستعم�
 export const returnConditions = Object.freeze({NEW:'جديد', USED:'مستعمل', OUT_OF_SERVICE:'خارج الخدمة'})
 export const serialModes = Object.freeze({REQUIRED:'إلزامي', OPTIONAL:'اختياري', DISABLED:'معطل'})
 export const custodyLabels = Object.freeze({none:'غير مسند', employee:'موظف', department:'قسم'})
-export const movementLabels = Object.freeze({CREATE:'إضافة أصل', UPDATE:'تعديل بيانات', ASSIGN:'تسليم عهدة', RETURN:'إرجاع عهدة', TRANSFER:'نقل عهدة', REPLACE:'استبدال', CONDITION:'تغيير الحالة', MAINTENANCE:'صيانة', GROUP_ADD:'إضافة إلى مجموعة', GROUP_REMOVE:'إزالة من مجموعة', GROUP_CREATE:'إنشاء مجموعة', GROUP_UPDATE:'تعديل مجموعة', GROUP_DELETE:'تعطيل مجموعة'})
+export const movementLabels = Object.freeze({STOCK_ISSUE:'صرف من المخزون', STOCK_RECEIVE:'استلام كمية للمخزون', MERGE_TO_WAREHOUSE:'إرجاع إلى المخزون', GROUP_STOCK_RETURN:'إضافة مرتجع إلى المخزون', GROUP_STOCK_ISSUE:'صرف لمجموعة', CREATE:'إضافة أصل', UPDATE:'تعديل بيانات', ASSIGN:'تسليم عهدة', RETURN:'إرجاع عهدة', TRANSFER:'نقل عهدة', REPLACE:'استبدال', CONDITION:'تغيير الحالة', MAINTENANCE:'صيانة', GROUP_ADD:'إضافة إلى مجموعة', GROUP_REMOVE:'إزالة من مجموعة', GROUP_CREATE:'إنشاء مجموعة', GROUP_UPDATE:'تعديل مجموعة', GROUP_DELETE:'تعطيل مجموعة'})
 
 export function createSimpleAssetService(client) {
   const item = async (url, options) => (await client.request(url, options)).item

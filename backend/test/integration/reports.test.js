@@ -11,7 +11,7 @@ import { createMySqlSessionRepository } from '../../src/repositories/mysqlSessio
 import { createMySqlReferenceRepository } from '../../src/repositories/mysqlReferenceRepository.js'
 import { createMySqlTicketRepository } from '../../src/repositories/mysqlTicketRepository.js'
 import { createMySqlReportRepository } from '../../src/repositories/mysqlReportRepository.js'
-import { createLocalAccountService } from '../../src/auth/localAccountService.js'
+import { createLocalAccountService } from '../support/accounts.js'
 import { createLocalPasswordProvider } from '../../src/auth/localPasswordProvider.js'
 import { createAuthService } from '../../src/auth/authService.js'
 import { ticketInput } from '../../src/tickets/validation.js'
@@ -49,7 +49,9 @@ before(async () => {
       ...(i === 7 ? {} : { departmentId: refs.departments[i === 4 ? 1 : 0].id }), categoryId: refs.categories[i === 6 ? 1 : 0].id,
       subcategoryId: refs.subcategories[i === 6 ? 1 : 0].id, title: 'Fictional report fixture', description: 'No real data',
       ...(i === 7 ? { requesterType: 'top_management', managementPosition: 'Fictional office' } : {}) }
-    const { item } = await repository.create(ticketInput(body, user), user); tickets.push(item)
+    // Historical report fixtures deliberately preserve pre-profile reporter snapshots.
+    const historical={...ticketInput(body,user),accountReporter:false,reporterName:body.reporterName,employeeNumber:body.employeeNumber};
+    const { item } = await repository.create(historical, user); tickets.push(item)
     await pool.execute('UPDATE tickets SET status = ?, created_at = ? WHERE id = ?', [status, new Date(i === 0 ? '2091-02-01T00:00:00.000Z' : i === 7 ? '2091-02-02T23:59:59.999Z' : `2091-02-02T0${i}:00:00.000Z`), item.id])
   }
   // Historical reopen events must count a solved ticket once, not multiply totals.
@@ -128,7 +130,8 @@ test('employee grouping crosses owners, includes manual employee requests and di
   for (const [index, key] of ['a', 'b', 'manager', 'a', 'b'].entries()) {
     const user = accounts[key]
     const body = { reporterName: index < 3 ? ' Same Reporter ' : 'Numbered', employeeNumber: index === 3 ? 'CASE' : index === 4 ? 'case' : '', departmentId: refs.departments[0].id, categoryId: refs.categories[0].id, title: 'Fictional grouping', description: 'Fictional data' }
-    const { item } = await repository.create(ticketInput(body, user), user)
+    const historical={...ticketInput({...body,...(user.role==='manager'?{reporterUserId:accounts.a.id}:{})},user),accountReporter:false,reporterName:body.reporterName.trim(),employeeNumber:body.employeeNumber};
+    const { item } = await repository.create(historical,user)
     tickets.push(item)
     await pool.execute('UPDATE tickets SET created_at = ? WHERE id = ?', [new Date(`2093-01-01T0${index}:00:00Z`), item.id])
     if (index === 1) await pool.execute('UPDATE tickets SET reporter_name = ?, department_label = ?, category_label = ? WHERE id = ?', [' same reporter ', ` ${item.department.toUpperCase()} `, ` ${item.category.toUpperCase()} `, item.id])

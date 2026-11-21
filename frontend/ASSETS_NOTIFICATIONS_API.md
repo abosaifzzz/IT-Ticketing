@@ -26,6 +26,8 @@ The Vite development proxy binds upstream cancellation before and after stream h
 
 Sound is browser-only and disabled by default. Users can enable, mute or preview it in notification history. Preferences persist through the existing preference service. Web Audio unlock/resume requires user interaction; suspended or unsupported contexts fail safely. Initial history and repeated/reconnected snapshots do not replay old notification sounds. Only newly observed unread new-ticket/assignment events produce their corresponding sounds, subject to the user's settings. No browser notification permission is requested and no audio setting affects server notification persistence.
 
+The settings test buttons and live notifications use the same renderer in `notificationSoundService` (layered square/sine voices through a compressor, louder than the original triangle tone, without clipping). Live sounds are keyed by `accountId:notificationId`; the key is reserved synchronously before any audio `await`, so the same notification delivered concurrently by SSE, polling or a reconnect plays at most once. Unlock listeners stay attached until a user gesture produces a running AudioContext.
+
 ## Verification
 
 Run npm run lint, npm run build, npm run verify:api-assets-notifications and npm run verify:assets-notifications-browser. Existing authentication, employee, engineer, manager and mock regression suites also remain available. Live tests use the already configured backend/.env.fresh.test database and fictional fixtures only, then remove their own records; no administrator password is needed.

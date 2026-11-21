@@ -11,7 +11,7 @@
     "start": "node src/server.js",
     "test": "npm run test:unit",
     "test:unit": "node --test test/auth.test.js test/management.test.js test/tickets.test.js test/workflow.test.js test/assets.test.js test/notifications.test.js test/reports.test.js test/security.test.js test/roster.test.js test/asset-management.test.js test/simple-assets.test.js test/administration.test.js",
-    "test:integration": "node --test --test-concurrency=1 test/integration/auth.test.js test/integration/management.test.js test/integration/tickets.test.js test/integration/workflow.test.js test/integration/assets.test.js test/integration/notifications.test.js test/integration/reports.test.js test/integration/audit.test.js test/integration/employees.test.js test/integration/asset-management.test.js test/integration/simple-assets.test.js test/integration/administration.test.js",
+    "test:integration": "node --test --test-concurrency=1 test/integration/auth.test.js test/integration/management.test.js test/integration/tickets.test.js test/integration/workflow.test.js test/integration/assets.test.js test/integration/notifications.test.js test/integration/reports.test.js test/integration/audit.test.js test/integration/employees.test.js test/integration/asset-management.test.js test/integration/simple-assets.test.js test/integration/administration.test.js test/integration/first-login.test.js test/integration/profiles.test.js",
     "test:integration:core": "node --test test/integration/auth.test.js test/integration/management.test.js test/integration/tickets.test.js test/integration/workflow.test.js test/integration/reports.test.js",
     "test:integration:reports": "node --test test/integration/reports.test.js",
     "test:integration:assets": "node --test test/integration/assets.test.js",
@@ -26,7 +26,10 @@
     "test:integration:asset-management": "node --test test/integration/asset-management.test.js",
     "test:integration:simple-assets": "node --test test/integration/simple-assets.test.js",
     "test:integration:administration": "node --test test/integration/administration.test.js",
-    "admin:approve": "node scripts/approve-admin-request.js"
+    "admin:approve": "node scripts/approve-admin-request.js",
+    "test:integration:first-login": "node --test test/integration/first-login.test.js",
+    "users:import": "node scripts/import-user-roster.js",
+    "test:integration:profiles": "node --test test/integration/profiles.test.js"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.2.2",

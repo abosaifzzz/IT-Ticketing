@@ -1,3 +1,4 @@
+import {seedFixtureProfiles,clearFixtureProfiles} from '../support/profiles.js'
 import { testEnvironment } from '../support/database.js'
 import assert from 'node:assert/strict'
 import { before, after, test } from 'node:test'
@@ -12,7 +13,7 @@ import { createMySqlReferenceRepository } from '../../src/repositories/mysqlRefe
 import { createMySqlItUserRepository } from '../../src/repositories/mysqlItUserRepository.js'
 import { createMySqlTicketRepository } from '../../src/repositories/mysqlTicketRepository.js'
 import { createMySqlTicketWorkflowRepository } from '../../src/repositories/mysqlTicketWorkflowRepository.js'
-import { createLocalAccountService } from '../../src/auth/localAccountService.js'
+import { createLocalAccountService } from '../support/accounts.js'
 import { createLocalPasswordProvider } from '../../src/auth/localPasswordProvider.js'
 import { createAuthService, hashSessionToken } from '../../src/auth/authService.js'
 import { createApp } from '../../src/app.js'
@@ -38,6 +39,7 @@ before(async () => {
   }
   department = await createMySqlReferenceRepository(pool, 'departments').save({ name: `قسم خيالي ${suffix}`, isActive: true })
   category = await createMySqlReferenceRepository(pool, 'categories').save({ name: `نوع خيالي ${suffix}`, isActive: true })
+  await seedFixtureProfiles(pool,accounts,[department])
   const authService = createAuthService({ provider: await createLocalPasswordProvider(users), sessions: createMySqlSessionRepository(pool) })
   const managementRepositories = {
     departments: createMySqlReferenceRepository(pool, 'departments'), categories: createMySqlReferenceRepository(pool, 'categories'),
@@ -58,6 +60,7 @@ after(async () => {
   try { if (server) await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())) }
   finally {
     if (pool) {
+      await clearFixtureProfiles(pool,accounts)
       try {
         for (const account of Object.values(accounts)) await pool.execute('DELETE FROM tickets WHERE created_by_account_id = ?', [account.id])
         if (category) await pool.execute('DELETE FROM fault_categories WHERE id = ?', [category.id])
@@ -82,7 +85,7 @@ function ticketInput(extra = {}) {
 }
 
 async function create(extra = {}, role = 'employeeA') {
-  const result = await request('/tickets', { role, body: ticketInput(extra) })
+  const result = await request('/tickets', { role, body: {...ticketInput(extra),...(['managerA','managerB','engineerA','engineerB'].includes(role)?{reporterUserId:accounts.employeeA.id}:{})} })
   assert.equal(result.status, 201)
   return result.data.item
 }
@@ -138,8 +141,12 @@ test('self-claims are engineer-owned, cannot take over assignments, and queue re
   ticket = await act(ticket, 'claim')
   assert.equal(ticket.assignedByManagerId, null)
   assert.equal(ticket.assignedByTechnicianId, accounts.engineerA.id)
-  assert.equal(ticket.history.at(-1).type, 'claim')
-  assert.equal(ticket.history.at(-1).data.assignedByManagerId, null)
+  // Claiming also starts the work: the claim is followed by an in-progress status entry.
+  assert.equal(ticket.status, 'in_progress')
+  assert.equal(ticket.history.at(-2).type, 'claim')
+  assert.equal(ticket.history.at(-2).data.assignedByManagerId, null)
+  assert.equal(ticket.history.at(-1).type, 'status')
+  assert.equal(ticket.history.at(-1).status, 'in_progress')
   await act(ticket, 'claim', {}, 'engineerA', 409)
   await act(ticket, 'claim', {}, 'engineerB', 409)
   ticket = await assign(ticket, 'engineerB')
@@ -257,7 +264,11 @@ test('authorization, pending/solution validation and invalid transitions leave s
   assert.equal(current.history.length, ticket.history.length)
   const resolved = await act(ticket, 'status', { status: 'resolved', solutionDescription: 'حل خيالي' })
   for (const body of [{ status: 'resolved', solutionDescription: 'مكرر' }, { status: 'pending', pendingReason: 'مرفوض' }, { status: 'in_progress' }]) await act(resolved, 'status', body, 'engineerA', 409)
-  await act(resolved, 'notes', { text: 'مرفوض' }, 'engineerA', 409)
+  // The assigned engineer may still comment after solving; other engineers may not.
+  const commented = await act(resolved, 'notes', { text: 'تعليق بعد الحل' }, 'engineerA', 200)
+  assert.equal(commented.status, 'closed')
+  assert.ok(commented.publicTechnicianNotes.some((note) => note.text === 'تعليق بعد الحل'))
+  await act(resolved, 'notes', { text: 'مرفوض' }, 'engineerB', 404)
 })
 
 test('only one concurrent engineer can claim a new ticket', async () => {
@@ -314,7 +325,7 @@ test('concurrent resolution/confirmation attempts append only one successful tra
 })
 
 test('manual-ticket creator cannot bypass reassignment scope using an old creation idempotency key', async () => {
-  const body = ticketInput({ clientRequestId: `manual-replay-${randomUUID()}` })
+  const body = {...ticketInput({ clientRequestId: `manual-replay-${randomUUID()}` }),reporterUserId:accounts.employeeA.id}
   const created = await request('/tickets', { role: 'engineerA', body })
   assert.equal(created.status, 201)
   const ticket = await assign(created.data.item, 'engineerB')
@@ -322,7 +333,7 @@ test('manual-ticket creator cannot bypass reassignment scope using an old creati
   const replay = await request('/tickets', { role: 'engineerA', body })
   assert.equal(replay.status, 404)
   assert.equal(JSON.stringify(replay).includes(internalSecret), false)
-  await act(ticket, 'confirm-resolution', {}, 'employeeA', 404)
+  await act(ticket, 'confirm-resolution', {}, 'employeeB', 404)
 })
 
 test('availability changes and claims serialize against the same account state', async () => {
@@ -339,6 +350,62 @@ test('availability changes and claims serialize against the same account state',
     assert.equal(current.assignedTechnicianId, claim.status === 200 ? accounts.engineerA.id : null)
     await act(await create(), 'claim', {}, 'engineerA', 409)
   } finally { await available('engineerA', true) }
+})
+
+test('optional AnyDesk ID is stored on portal and manual tickets and visible to the employee and IT', async () => {
+  const portal = await create({ anydeskId: '123 456 789' })
+  assert.equal(portal.anydeskId, '123456789')
+  assert.equal((await request(`/tickets/${portal.id}`, { role: 'employeeA', method: 'GET' })).data.item.anydeskId, '123456789')
+  assert.equal((await request(`/tickets/${portal.id}`, { role: 'managerA', method: 'GET' })).data.item.anydeskId, '123456789')
+  const manual = await create({ anydeskId: 'front.desk@ad' }, 'engineerA')
+  assert.equal(manual.anydeskId, 'front.desk@ad')
+  assert.equal((await create()).anydeskId, null)
+  assert.equal((await request('/tickets', { role: 'employeeA', body: ticketInput({ anydeskId: 'not-an-id' }) })).status, 400)
+})
+
+test('portal tickets record the submitting device IP server-side, visible to IT only and not spoofable', async () => {
+  const post = (forwarded, body) => fetch(`${url}/api/tickets`, { method: 'POST',
+    headers: { Cookie: cookies.employeeA, Origin: origin, 'Content-Type': 'application/json', ...(forwarded ? { 'X-Forwarded-For': forwarded } : {}) },
+    body: JSON.stringify(body) }).then(async (response) => ({ status: response.status, data: await response.json() }))
+  // The test client is on loopback, so it stands in for the trusted local proxy (Vite).
+  const viaProxy = await post('10.20.30.40', ticketInput({ title: `IP ${suffix}` }))
+  assert.equal(viaProxy.status, 201)
+  const ticket = viaProxy.data.item
+  assert.equal(ticket.reporterIp, undefined, 'employees do not receive the IP')
+  assert.equal((await request(`/tickets/${ticket.id}`, { role: 'managerA' })).data.item.reporterIp, '10.20.30.40')
+  // A client-forged entry is ignored: only the address the trusted proxy appended counts.
+  const spoofed = await post('1.2.3.4, 10.20.30.41', ticketInput({ title: `IP spoof ${suffix}` }))
+  assert.equal((await request(`/tickets/${spoofed.data.item.id}`, { role: 'managerA' })).data.item.reporterIp, '10.20.30.41')
+  // A body field cannot set it.
+  assert.equal((await request('/tickets', { role: 'employeeA', body: ticketInput({ reporterIp: '9.9.9.9' }) })).status, 400)
+  // IT-created manual tickets do not record the IT staff member's address as the employee's.
+  assert.equal((await request(`/tickets/${(await create({}, 'engineerA')).id}`, { role: 'managerA' })).data.item.reporterIp, null)
+})
+
+test('managers create IT tickets for an engineer with no employee requester, visible to IT only', async () => {
+  const body = { requesterType: 'it_internal', title: `IT task ${suffix}`, description: 'تغيير مؤقت جهاز التكييف', assignedTechnicianId: accounts.engineerA.id }
+  const created = await request('/tickets', { role: 'managerA', body })
+  assert.equal(created.status, 201)
+  const ticket = created.data.item
+  assert.equal(ticket.requesterType, 'it_internal')
+  assert.equal(ticket.status, 'assigned')
+  assert.equal(ticket.assignedTechnicianId, accounts.engineerA.id)
+  assert.equal(ticket.reporterAccountId, null)
+  assert.equal(ticket.departmentId, null)
+  assert.equal(ticket.reporterName, 'قسم تكنولوجيا المعلومات')
+  assert.equal(ticket.categoryId, null)
+  assert.equal(ticket.category, 'بلاغ تقنية المعلومات')
+  assert.equal(ticket.subcategory, 'مهمة داخلية')
+  assert.equal((await request('/tickets', { role: 'managerA', body: { ...body, categoryId: category.id } })).status, 400)
+  assert.equal((await request('/tickets', { role: 'managerA', body: { requesterType: 'employee', reporterUserId: accounts.employeeA.id, title: 'بدون تصنيف', description: 'خيالي' } })).status, 400)
+  assert.equal((await request(`/tickets/${ticket.id}`, { role: 'engineerA' })).status, 200)
+  assert.equal((await request(`/tickets/${ticket.id}`, { role: 'employeeA' })).status, 404)
+  assert.equal((await request('/tickets?search=' + encodeURIComponent(`IT task ${suffix}`), { role: 'employeeA' })).data.items.length, 0)
+  const started = await act(ticket, 'status', { status: 'in_progress' })
+  assert.equal(started.status, 'in_progress')
+  assert.equal((await request('/tickets', { role: 'engineerA', body })).status, 403)
+  assert.equal((await request('/tickets', { role: 'managerA', body: { ...body, assignedTechnicianId: undefined } })).status, 400)
+  assert.equal((await request('/tickets', { role: 'managerA', body: { ...body, reporterUserId: accounts.employeeA.id } })).status, 400)
 })
 
 test('workflow writes retain CSRF checks and reject inactive or expired sessions', async () => {

@@ -11,7 +11,8 @@ export function createEngineerTicketApi(client) {
   const action = (ticket, path, body) => item('/tickets/' + encodeURIComponent(ticket.id) + '/' + path, { method: 'POST', body: { ...body, expectedVersion: ticket.version } })
   return {
     list: tickets.list, allTickets(filters = {}, signal) { return tickets.list({ ...filters, scope: 'all' }, signal) },
-    details: tickets.details, summary: tickets.summary, options: tickets.options, employeeOptions: tickets.employeeOptions,
+    details: tickets.details, summary: tickets.summary, options: tickets.options,
+    userOptions(search = '', page = 1, signal) { return client.request('/user-options?' + new URLSearchParams({ search: search.trim(), page: String(page) }), { signal }) },
     ownState(userId, signal) { return item('/it-users/' + encodeURIComponent(userId), { signal }) },
     availability(isAvailable) { return item('/it-users/me/availability', { method: 'PATCH', body: { isAvailable } }) },
     recurring(signal) { return client.request('/dashboard/recurring-problems', { signal }) },
@@ -24,16 +25,22 @@ export function createEngineerTicketApi(client) {
     manual(form, clientRequestId) {
       return item('/tickets', { method: 'POST', body: {
         requesterType: form.requesterType,
-        ...(form.requesterType === 'employee' ? { reporterEmployeeId: form.reporterEmployeeId } : {
+        // IT tickets ('it_internal') carry no requester, department or contact fields.
+        ...(form.requesterType === 'employee' ? { reporterUserId: form.reporterUserId, departmentId: form.departmentId, ...(form.reporterPhone ? { reporterPhone: form.reporterPhone.trim() } : {}) } : form.requesterType === 'it_internal' ? {} : {
           reporterName: form.reporterName.trim(),
           managementPosition: form.managementPosition.trim(),
         }),
-        title: deriveTicketTitle(form.description), categoryId: form.category, description: form.description.trim(),
-        ...(form.subcategory ? { subcategoryId: form.subcategory } : {}), clientRequestId,
+        title: deriveTicketTitle(form.description), description: form.description.trim(),
+        // IT tickets are direct commands without a fault category.
+        ...(form.requesterType === 'it_internal' ? {} : { categoryId: form.category, ...(form.subcategory ? { subcategoryId: form.subcategory } : {}) }), clientRequestId,
+        ...(form.anydeskId ? { anydeskId: form.anydeskId } : {}),
       } })
     },
     assets(search = '', page = 1, signal) { return client.request('/assets?' + new URLSearchParams({ search, operationalStatus: 'working', page, pageSize: 10 }), { signal }) },
     asset(id, signal) { return item('/assets/' + encodeURIComponent(id), { signal }) },
+    // Asset registry (asset-management/simple): pick an asset and record it as used for the ticket.
+    registryAssets(search = '', page = 1, signal) { return client.request('/asset-management/simple/assets?' + new URLSearchParams({ search, page, pageSize: 10 }), { signal }) },
+    linkAsset(ticket, assetId, clientRequestId) { return client.request('/asset-management/ticket-links', { method: 'POST', body: { assetId, ticketId: ticket.id, clientRequestId } }) },
     withdraw(ticket, asset) {
       // expectedVersion is the STOCK record version, not the ticket version.
       return client.request('/assets/' + encodeURIComponent(asset.assetId) + '/withdraw', { method: 'POST', body: { ticketId: ticket.id, expectedVersion: asset.version } })

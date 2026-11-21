@@ -4,6 +4,7 @@ export function mapTicket(row) {
   return {
     id: row.id, reference: row.ticket_sequence == null ? null : `IT${BigInt(row.ticket_sequence) - 1n}`, reporterAccountId: row.reporter_account_id, reporterName: row.reporter_name,
     employeeNumber: row.employee_number, departmentId: row.department_id, department: row.department_label,
+    reporterUserId:row.reporter_user_id??null,reporterUsername:row.reporter_username??null,reporterPhone:row.reporter_phone??null,anydeskId:row.anydesk_id??null,reporterIp:row.reporter_ip??null,
     categoryId: row.category_id, category: row.category_label, subcategoryId: row.subcategory_id, subcategory: row.subcategory_label,
     title: row.title, description: row.description, source: row.source, createdFor: row.created_for,
     requesterType: row.requester_type, managementPosition: row.management_position,
@@ -20,7 +21,7 @@ export function mapTicket(row) {
 
 export function mapTicketForUser(row, user) {
   const item = mapTicket(row)
-  if (user.role === 'employee') delete item.solutionDescription
+  if (user.role === 'employee') { delete item.solutionDescription; delete item.reporterIp }
   return item
 }
 
@@ -48,7 +49,11 @@ export async function ticketDetails(connection, row, user) {
     data: typeof event.data === 'string' ? JSON.parse(event.data) : event.data }))
   const notes = (visibility) => history.filter((event) => event.type === 'technician_note' && event.visibility === visibility)
     .map((event) => ({ id: event.id, authorAccountId: event.actorAccountId, authorName: event.actorName, text: event.note, visibility, createdAt: event.timestamp }))
-  return { ...mapTicketForUser(row, user), history, publicTechnicianNotes: notes('public'),
+  // Assets from the asset registry that IT recorded as used for this ticket (IT only).
+  const [linkedAssets] = employee ? [[]] : await connection.execute(`SELECT a.id, a.asset_tag AS internalAssetId, c.name AS assetTypeName, a.brand, a.model, a.serial_number AS serialNumber,
+    l.created_at AS linkedAt, u.full_name AS linkedByName FROM am_ticket_links l JOIN am_assets a ON a.id = l.asset_id
+    LEFT JOIN am_categories c ON c.id = a.category_id LEFT JOIN users u ON u.id = l.actor_id WHERE l.ticket_id = ? ORDER BY l.created_at, a.asset_tag`, [row.id])
+  return { ...mapTicketForUser(row, user), history, ...(!employee ? { linkedAssets } : {}), publicTechnicianNotes: notes('public'),
     ...(!employee ? { internalTechnicianNotes: notes('internal') } : {}),
     comments: history.filter((event) => event.type === 'comment')
       .map((event) => ({ id: event.id, authorAccountId: event.actorAccountId, authorName: event.actorName, text: event.note, createdAt: event.timestamp })) }

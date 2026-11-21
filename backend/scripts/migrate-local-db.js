@@ -27,7 +27,7 @@ try {
         const privileges = file === '.env.test' ? 'SELECT, INSERT, UPDATE, DELETE' : 'SELECT, INSERT, UPDATE'
         await admin.query(`GRANT ${privileges} ON \`${database}\`.\`${table}\` TO ?@'127.0.0.1'`, [env.DB_USER])
       }
-      await admin.query(`GRANT ${file === '.env.test' ? 'SELECT, INSERT, UPDATE, DELETE' : 'SELECT, INSERT'} ON \`${database}\`.\`employee_directory\` TO ?@'127.0.0.1'`, [env.DB_USER])
+      await admin.query(`GRANT ${file === '.env.test' ? 'SELECT, INSERT, UPDATE, DELETE' : 'SELECT, INSERT, UPDATE'} ON \`${database}\`.\`employee_directory\` TO ?@'127.0.0.1'`, [env.DB_USER])
       if (file === '.env') {
         const [privileges] = await admin.execute("SELECT PRIVILEGE_TYPE FROM information_schema.TABLE_PRIVILEGES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'users' AND GRANTEE = ?", [database, `'${env.DB_USER}'@'127.0.0.1'`])
         if (privileges.some((row) => row.PRIVILEGE_TYPE === 'DELETE')) await admin.query(`REVOKE DELETE ON \`${database}\`.users FROM ?@'127.0.0.1'`, [env.DB_USER])
@@ -49,7 +49,7 @@ try {
         await admin.query(`GRANT ${privileges} ON \`${database}\`.\`${table}\` TO ?@'127.0.0.1'`, [env.DB_USER])
       }
       for(const table of administrativeTables){
-        const privileges=file==='.env.test'?'SELECT, INSERT, UPDATE, DELETE':table==='admin_audit'?'SELECT, INSERT':'SELECT, INSERT, UPDATE'
+        const privileges=file==='.env.test'?'SELECT, INSERT, UPDATE, DELETE':table==='user_departments'?'SELECT, INSERT, UPDATE, DELETE':['admin_audit','user_roster_imports'].includes(table)?'SELECT, INSERT':'SELECT, INSERT, UPDATE'
         await admin.query(`GRANT ${privileges} ON \`${database}\`.\`${table}\` TO ?@'127.0.0.1'`,[env.DB_USER])
       }
       for (const name of (await readdir(new URL('../db/migrations/', import.meta.url))).filter((name) => name.endsWith('.sql'))) {

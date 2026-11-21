@@ -1,4 +1,6 @@
-﻿# Frontend employee selection contract
+# Frontend employee selection contract
+
+Superseded for new ordinary tickets by [account-based ticket reporters and profiles](account-profiles.md), migration 018. Employees now use their authenticated identity; IT selects login accounts through `/api/user-options`. The directory contract below remains historical/legacy documentation.
 
 Backend support added 2026-11-07. No migration or additional grants are required after migrations 007–009. The imported roster remains directory data, not login accounts. Frontend files have not been changed in this update.
 

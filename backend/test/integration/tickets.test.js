@@ -1,3 +1,4 @@
+import {seedFixtureProfiles,clearFixtureProfiles} from '../support/profiles.js'
 import {createMySqlEmployeeDirectoryRepository} from '../../src/repositories/mysqlEmployeeDirectoryRepository.js'
 import { testEnvironment } from '../support/database.js'
 import assert from 'node:assert/strict'
@@ -11,7 +12,7 @@ import { createMySqlUserRepository } from '../../src/repositories/mysqlUserRepos
 import { createMySqlSessionRepository } from '../../src/repositories/mysqlSessionRepository.js'
 import { createMySqlReferenceRepository } from '../../src/repositories/mysqlReferenceRepository.js'
 import { createMySqlTicketRepository } from '../../src/repositories/mysqlTicketRepository.js'
-import { createLocalAccountService } from '../../src/auth/localAccountService.js'
+import { createLocalAccountService } from '../support/accounts.js'
 import { createLocalPasswordProvider } from '../../src/auth/localPasswordProvider.js'
 import { createAuthService, hashSessionToken } from '../../src/auth/authService.js'
 import { createApp } from '../../src/app.js'
@@ -43,6 +44,7 @@ before(async () => {
         ...(kind === 'subcategories' ? { categoryId: categories[index].id } : {}) }))
     }
   }
+  await seedFixtureProfiles(pool,accounts,departments)
   const authService = createAuthService({ provider: await createLocalPasswordProvider(users), sessions: createMySqlSessionRepository(pool) })
   server = createApp({ authService, ticketRepository: createMySqlTicketRepository(pool), config: { appOrigin: origin, nodeEnv: 'test' } }).listen(0, '127.0.0.1')
   await once(server, 'listening')
@@ -59,6 +61,7 @@ after(async () => {
     if (server) await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
   } finally {
     if (pool) {
+      await clearFixtureProfiles(pool,accounts)
       try {
         for (const account of Object.values(accounts)) await pool.execute('DELETE FROM tickets WHERE created_by_account_id = ?', [account.id])
         for (const account of Object.values(accounts)) await pool.execute('DELETE FROM employee_directory WHERE created_by_account_id=?',[account.id])
@@ -84,25 +87,24 @@ async function request(path = '', { role = 'employeeA', method = 'GET', body, or
 }
 
 async function create(body = input(), role = 'employeeA') {
-  const result = await request('', { role, method: 'POST', body })
+  const result = await request('', { role, method: 'POST', body: {...body,...(['manager','engineerA','engineerB'].includes(role)&&body.requesterType!=='top_management'?{reporterUserId:accounts.employeeA.id}:{})} })
   assert.equal(result.status, 201)
   return result.data.item
 }
 
-test('personal and on-behalf tickets use session ownership and explicit reporter data', async () => {
+test('personal tickets use account identity and cannot select a different employee', async () => {
   first = await create()
-  other = await create(input({ createdFor: 'other', employeeNumber: 'FICTIONAL-001', title: `Blue ${suffix}` }))
+  other = await create(input({ title: `Blue ${suffix}` }))
   const sameName = await create(input({ reporterName: first.reporterName }), 'employeeB')
   assert.equal(first.reporterAccountId, accounts.employeeA.id)
   assert.equal(first.createdFor, 'self')
-  assert.equal(first.reporterName, 'اسم موظف مدخل يدويًا')
-  assert.notEqual(first.reporterName, accounts.employeeA.fullName)
+  assert.equal(first.reporterName, accounts.employeeA.fullName)
   assert.equal(first.department, departments[0].name)
   assert.equal(first.category, categories[0].name)
   assert.equal(first.subcategory, subcategories[0].name)
-  assert.equal(other.createdFor, 'other')
+  assert.equal(other.createdFor, 'self')
   assert.equal(other.reporterAccountId, accounts.employeeA.id)
-  assert.equal(other.employeeNumber, 'FICTIONAL-001')
+  assert.equal(other.employeeNumber, '')
   assert.equal(first.status, 'new')
   assert.equal(first.assignedTechnicianId, null)
   assert.equal(first.history.length, 1)
@@ -134,16 +136,16 @@ test('account-scoped searching, status/date/reference filters, sorting and pagin
   assert.equal((await request(`?search=${suffix}`, { role: 'employeeB' })).data.total, 1)
 })
 
-test('manual employee and senior-management requests retain creator identity without employee ownership', async () => {
+test('manual employee tickets belong to the selected account; senior-management requests retain separate creator identity', async () => {
   manual = await create(input({ requesterType: 'employee', employeeNumber: 'FICTIONAL-002' }), 'engineerA')
   const seniorInput = input({ requesterType: 'top_management', managementPosition: 'مكتب خيالي' })
   delete seniorInput.departmentId
   const senior = await create(seniorInput, 'manager')
   for (const ticket of [manual, senior]) {
     assert.equal(ticket.source, 'manual')
-    assert.equal(ticket.reporterAccountId, null)
+    assert.equal(ticket.reporterAccountId, ticket.requesterType==='employee'?accounts.employeeA.id:null)
     assert.equal(ticket.createdFor, null)
-    assert.equal((await request(`/${ticket.id}`)).status, 404)
+    assert.equal((await request(`/${ticket.id}`)).status, ticket.requesterType==='employee'?200:404)
     assert.equal((await request(`/${ticket.id}`, { role: 'employeeB' })).status, 404)
     assert.equal((await request(`/${ticket.id}`, { role: 'manager' })).status, 200)
   }
@@ -265,11 +267,11 @@ test('frontend-style label inputs resolve active references; optional subcategor
 })
 
 test('missing required fields, forbidden fields, scope filters and malformed IDs are rejected', async () => {
-  for (const field of ['reporterName', 'departmentId', 'categoryId', 'title', 'description']) {
+  for (const field of ['categoryId', 'title', 'description']) {
     const body = input(); delete body[field]
     assert.equal((await request('', { method: 'POST', body })).status, 400)
   }
-  for (const extra of [{ reporterName: '   ' }, { priority: 'high' }, { rating: 5 }, { maintenance: true }, { status: 'closed' }, { history: [] }, { assignedByManagerId: accounts.manager.id }]) {
+  for (const extra of [{ priority: 'high' }, { rating: 5 }, { maintenance: true }, { status: 'closed' }, { history: [] }, { assignedByManagerId: accounts.manager.id }]) {
     assert.equal((await request('', { method: 'POST', body: input(extra) })).status, 400)
   }
   for (const query of [`reporterAccountId=${accounts.employeeB.id}`, `technicianId=${accounts.engineerB.id}`, 'creationDate=2026-02-30', 'status=unknown', 'pageSize=101', 'page=-1', 'priority=high']) {
@@ -305,21 +307,21 @@ test('ticket references are database allocated, unique under concurrency, search
  const details=await request('/'+ticket.id);assert.equal(details.data.item.reference,ticket.reference)
 })
 
-test('directory selection derives reporter/department server-side, validates activity, snapshots labels and preserves ownership',async()=>{
- const directory=await createMySqlEmployeeDirectoryRepository(pool).create({fullName:'Fictional selected employee '+suffix,departmentId:departments[0].id},accounts.manager)
- const body=input({reporterEmployeeId:directory.id,clientRequestId:randomUUID()});delete body.reporterName;delete body.departmentId
+test('directory identities cannot replace the authenticated employee; inactive memberships reject new tickets',async()=>{
+ const directory=await createMySqlEmployeeDirectoryRepository(pool).create({fullName:'Fictional historical directory '+suffix,departmentId:departments[0].id},accounts.manager)
+ const body=input({reporterEmployeeId:directory.id,reporterName:'Forged name',clientRequestId:randomUUID()})
  const ticket=await create(body)
- assert.equal(ticket.reporterName,directory.fullName);assert.equal(ticket.departmentId,directory.departmentId);assert.equal(ticket.reporterAccountId,accounts.employeeA.id)
+ assert.equal(ticket.reporterName,accounts.employeeA.fullName)
+ assert.equal(ticket.reporterUsername,accounts.employeeA.email)
+ assert.equal(ticket.reporterPhone,'01000000000')
+ assert.equal(ticket.reporterAccountId,accounts.employeeA.id)
  assert.equal((await request('/'+ticket.id,{role:'employeeB'})).status,404)
- for(const extra of [{reporterEmployeeId:randomUUID()},{reporterName:'Forged name'},{departmentId:departments[1].id},{employeeNumber:'forged'}])assert.equal((await request('',{method:'POST',body:{...body,...extra,clientRequestId:randomUUID()}})).status,400)
- await pool.execute('UPDATE employee_directory SET full_name=?,is_active=FALSE WHERE id=?',['Fictional renamed employee',directory.id])
- assert.equal((await request('',{method:'POST',body:{...body,clientRequestId:randomUUID()}})).status,400)
+ await pool.execute('UPDATE employee_directory SET is_active=FALSE WHERE id=?',[directory.id])
+ assert.equal((await request('',{method:'POST',body:{...body,clientRequestId:randomUUID()}})).status,201)
  assert.equal((await request('',{method:'POST',body})).data.item.id,ticket.id)
- assert.equal((await request('/'+ticket.id)).data.item.reporterName,directory.fullName)
- await pool.execute('UPDATE employee_directory SET is_active=TRUE WHERE id=?',[directory.id])
- await pool.execute('UPDATE departments SET is_active=FALSE WHERE id=?',[directory.departmentId])
+ await pool.execute('UPDATE departments SET is_active=FALSE WHERE id=?',[departments[0].id])
  try {assert.equal((await request('',{method:'POST',body:{...body,clientRequestId:randomUUID()}})).status,400)}
- finally {await pool.execute('UPDATE departments SET is_active=TRUE WHERE id=?',[directory.departmentId])}
+ finally {await pool.execute('UPDATE departments SET is_active=TRUE WHERE id=?',[departments[0].id])}
 })
 
 test('inactive accounts and expired sessions lose ticket access on every request', async () => {

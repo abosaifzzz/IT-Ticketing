@@ -1,5 +1,12 @@
 import { ApiError, fields, invalid, text, uuid } from '../management/validation.js'
 import { assetId } from '../assets/validation.js'
+import {phoneInput} from '../auth/profiles.js'
+
+// Stored reporter-name snapshot for internal IT tickets, which have no employee requester.
+export const IT_TICKET_REPORTER_NAME = 'قسم تكنولوجيا المعلومات'
+// Display labels stored for IT tickets, which have no fault category.
+export const IT_TICKET_CATEGORY_LABEL = 'بلاغ تقنية المعلومات'
+export const IT_TICKET_SUBCATEGORY_LABEL = 'مهمة داخلية'
 
 export const ticketStatuses = Object.freeze(['new', 'assigned', 'in_progress', 'pending', 'resolved', 'closed', 'reopened'])
 
@@ -18,8 +25,21 @@ function reference(body, name, required) {
   return null
 }
 
+// Optional AnyDesk ID: the numeric address (9–12 digits; spaces/dashes are ignored)
+// or an AnyDesk alias such as "name@ad". Empty input means no ID.
+export function anydeskIdInput(value) {
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value !== 'string') invalid()
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const digits = trimmed.replace(/[\s-]/g, '')
+  if (/^[0-9]{9,12}$/.test(digits)) return digits
+  if (trimmed.length <= 64 && /^[A-Za-z0-9._-]{1,50}@[A-Za-z0-9._-]{1,13}$/.test(trimmed)) return trimmed.toLowerCase()
+  throw new ApiError(400, 'معرّف AnyDesk غير صالح. أدخل الرقم المكوّن من ٩ إلى ١٢ رقمًا أو اتركه فارغًا.')
+}
+
 export function ticketInput(body, user) {
-  fields(body, ['reporterEmployeeId', 'reporterName', 'employeeNumber', 'departmentId', 'department', 'categoryId', 'category',
+  fields(body, ['anydeskId', 'reporterPhone','reporterUserId','reporterEmployeeId', 'reporterName', 'employeeNumber', 'departmentId', 'department', 'categoryId', 'category',
     'subcategoryId', 'subcategory', 'title', 'description', 'source', 'createdFor', 'requesterType',
     'managementPosition', 'clientRequestId', 'assignedTechnicianId'])
   const source = body.source ?? (user.role === 'employee' ? 'portal' : 'manual')
@@ -31,15 +51,31 @@ export function ticketInput(body, user) {
   if (source === 'portal' && !['self', 'other'].includes(createdFor)) invalid()
   if (source === 'manual' && body.createdFor !== undefined) invalid()
   const requesterType = body.requesterType ?? 'employee'
-  if (!['employee', 'top_management'].includes(requesterType) || (source === 'portal' && requesterType !== 'employee')) invalid()
+  if (!['employee', 'top_management', 'it_internal'].includes(requesterType) || (source === 'portal' && requesterType !== 'employee')) invalid()
+  // IT tickets: internal manager-to-engineer tasks with no employee requester or department
+  // (e.g. "change the air-conditioner timer"). Only a manager may create them, and an engineer is required.
+  const internal = requesterType === 'it_internal'
+  if (internal) {
+    if (user.role !== 'manager' || source !== 'manual') throw new ApiError(403, 'بلاغات تقنية المعلومات ينشئها مدير تقنية المعلومات فقط.')
+    // A direct command, not a fault report: no requester, department, contact or fault category.
+    for (const key of ['reporterName', 'reporterUserId', 'reporterEmployeeId', 'employeeNumber', 'managementPosition', 'departmentId', 'department', 'reporterPhone', 'categoryId', 'category', 'subcategoryId', 'subcategory']) if (body[key] !== undefined) invalid()
+    if (body.assignedTechnicianId === undefined || body.assignedTechnicianId === null || body.assignedTechnicianId === '') throw new ApiError(400, 'اختر المهندس المسؤول عن بلاغ تقنية المعلومات.')
+  }
   const managementPosition = optionalText(body.managementPosition, 160)
   const employeeNumber = optionalText(body.employeeNumber, 80)
   if (requesterType === 'top_management' ? (!managementPosition || employeeNumber) : managementPosition) invalid()
-  const reporterEmployeeId = body.reporterEmployeeId === undefined ? null : uuid(body.reporterEmployeeId)
+  const accountReporter=requesterType==='employee'
+  if(source==='portal'&&body.reporterPhone!==undefined)invalid()
+  const reporterPhone=body.reporterPhone===undefined?null:phoneInput(body.reporterPhone)
+  if(!accountReporter&&body.reporterUserId!==undefined)invalid()
+  if(body.assignedTechnicianId&&user.role!=='manager')throw new ApiError(403,'لا يمكنك إسناد البلاغ.')
+  if(source==='portal'&&(body.reporterUserId!==undefined||createdFor!=='self'))invalid()
+  const reporterUserId=source==='manual'&&accountReporter?uuid(body.reporterUserId):null
+  const reporterEmployeeId = accountReporter?null:body.reporterEmployeeId === undefined ? null : uuid(body.reporterEmployeeId)
   if (reporterEmployeeId && requesterType !== 'employee') invalid()
   if (requesterType === 'top_management' && (body.departmentId !== undefined || body.department !== undefined)) invalid()
-  const reporterName = reporterEmployeeId && body.reporterName === undefined ? '' : text(body.reporterName)
-  if ((!reporterEmployeeId || body.reporterName !== undefined) && reporterName.length < 2) invalid()
+  const reporterName = internal ? IT_TICKET_REPORTER_NAME : accountReporter?'':reporterEmployeeId && body.reporterName === undefined ? '' : text(body.reporterName)
+  if (!internal&&!accountReporter&&(!reporterEmployeeId || body.reporterName !== undefined) && reporterName.length < 2) invalid()
   if (typeof body.description !== 'string') invalid()
   const description = body.description.trim().normalize('NFC')
   if (!description || description.length > 4000 || [...description].some((char) => {
@@ -53,10 +89,10 @@ export function ticketInput(body, user) {
   }
   const clientRequestId = body.clientRequestId ?? null
   if (clientRequestId !== null && (typeof clientRequestId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(clientRequestId))) invalid()
-  return { reporterName, employeeNumber, department: requesterType === 'top_management' ? null : reference(body, 'department', !reporterEmployeeId),
-    category: reference(body, 'category', true), subcategory: reference(body, 'subcategory', false),
+  return { reporterName, employeeNumber:accountReporter?'':employeeNumber, department: requesterType !== 'employee' ? null : reference(body, 'department', false),
+    category: internal ? null : reference(body, 'category', true), subcategory: internal ? null : reference(body, 'subcategory', false),
     title: text(body.title, 200), description, source, createdFor, requesterType, managementPosition,
-    assignedTechnicianId, clientRequestId, ...(reporterEmployeeId ? { reporterEmployeeId } : {}) }
+    assignedTechnicianId, clientRequestId,accountReporter,reporterUserId,anydeskId:anydeskIdInput(body.anydeskId),...(body.reporterPhone!==undefined?{reporterPhone}:{}), ...(reporterEmployeeId ? { reporterEmployeeId } : {}) }
 }
 
 export function ticketFilters(query, user) {

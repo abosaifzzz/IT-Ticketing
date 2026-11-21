@@ -10,6 +10,7 @@ export function createSimpleAssetRouter(repository) {
   const operations = [
     ['post','/types','simpleTypeCreate'], ['patch','/types/:id','simpleTypeUpdate'], ['delete','/types/:id','simpleTypeDelete'],
     ['post','/assets','simpleAssetCreate'], ['patch','/assets/:id','simpleAssetUpdate'], ['delete','/assets/:id','simpleAssetDelete'],
+    ['post','/assets/:id/receive','simpleAssetReceive'],
     ['post','/assets/:id/condition','simpleAssetCondition'], ['post','/assets/:id/custody','simpleAssetCustody'],
     ['post','/groups','simpleGroupCreate'], ['patch','/groups/:id','simpleGroupUpdate'], ['delete','/groups/:id','simpleGroupDelete'],
     ['post','/groups/:id/members','simpleGroupAdd'], ['post','/groups/:id/remove-member','simpleGroupRemove'],

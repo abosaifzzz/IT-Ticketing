@@ -26,16 +26,16 @@ await assert.rejects(()=>createHttpClient({fetchImpl:async()=>new Response('priv
 let snapshot={items:[{id:'old',type:'new_ticket',createdRevision:'9007199254740993',readAt:null}],revision:'9007199254740993',unreadCount:1}
 let emitted,sounds=[],poll,closed=false,cancelled=false,ended=false
 const listeners={},target=new EventTarget(),source={addEventListener(name,fn){listeners[name]=fn},close(){closed=true}}
-const feed=createNotificationFeed({api:{async history(){return structuredClone(snapshot)},async state(since){return{...snapshot,changed:since!==snapshot.revision}},async read(){snapshot={...snapshot,revision:'9007199254740996',unreadCount:0,items:snapshot.items.map(item=>({...item,readAt:'now'}))}},async readAll(){snapshot={...snapshot,revision:'9007199254740997',unreadCount:0}}},onChange:state=>emitted=state,onSound:sound=>sounds.push(sound),onSessionEnded:()=>{ended=true},eventSource:(url,options)=>{assert.equal(url,'/api/notifications/stream');assert.equal(options.withCredentials,true);return source},schedule:fn=>{poll=fn;return 1},cancel:()=>{cancelled=true},windowTarget:target})
+const feed=createNotificationFeed({api:{async history(){return structuredClone(snapshot)},async state(since){return{...snapshot,changed:since!==snapshot.revision}},async read(){snapshot={...snapshot,revision:'9007199254740996',unreadCount:0,items:snapshot.items.map(item=>({...item,readAt:'now'}))}},async readAll(){snapshot={...snapshot,revision:'9007199254740997',unreadCount:0}}},onChange:state=>emitted=state,onSound:(sound,id)=>sounds.push([sound,id]),onSessionEnded:()=>{ended=true},eventSource:(url,options)=>{assert.equal(url,'/api/notifications/stream');assert.equal(options.withCredentials,true);return source},schedule:fn=>{poll=fn;return 1},cancel:()=>{cancelled=true},windowTarget:target})
 const settle=async()=>{await new Promise(resolve=>setTimeout(resolve,0));await new Promise(resolve=>setTimeout(resolve,0))}
 feed.start();await settle();assert.equal(emitted.unreadCount,1);assert.equal(sounds.length,0)
 listeners.ready();await settle();assert.equal(sounds.length,0)
 snapshot={items:[{id:'new',type:'ticket_assignment',createdRevision:'9007199254740994',readAt:null},...snapshot.items],revision:'9007199254740994',unreadCount:2}
-listeners.refresh();await settle();assert.equal(emitted.unreadCount,2);assert.deepEqual(sounds,['assignment'])
+listeners.refresh();await settle();assert.equal(emitted.unreadCount,2);assert.deepEqual(sounds,[['assignment','new']])
 listeners.refresh();await settle();assert.equal(sounds.length,1)
 listeners.error();assert.equal(emitted.transport,'polling')
 snapshot={...snapshot,revision:'9007199254740995',unreadCount:3,items:[{id:'fallback',type:'new_ticket',createdRevision:'9007199254740995',readAt:null},...snapshot.items]}
-await poll();await settle();assert.equal(emitted.unreadCount,3);assert.deepEqual(sounds,['assignment','new_ticket'])
+await poll();await settle();assert.equal(emitted.unreadCount,3);assert.deepEqual(sounds,[['assignment','new'],['new_ticket','fallback']])
 await feed.read('new');assert.equal(emitted.unreadCount,0);assert.equal(sounds.length,2)
 await feed.readAll();assert.equal(emitted.revision,'9007199254740997')
 listeners.ready();await settle();assert.equal(sounds.length,2)
@@ -46,9 +46,10 @@ let fallbackState
 const fallback=createNotificationFeed({api:{async history(){return snapshot}},onChange:state=>fallbackState=state,eventSource:()=>{throw Error('unsupported')},schedule:()=>1,cancel:()=>{},windowTarget:target})
 fallback.start();await settle();assert.equal(fallbackState.transport,'polling');fallback.stop()
 // Audio is opt-in and a suspended browser context must not be treated as playable.
-let constructed=0,played=0
+let constructed=0,played=0,context
 const audioTarget=new EventTarget()
-class Audio {constructor(){constructed++;this.state='suspended';this.currentTime=0}async resume(){}createOscillator(){played++;throw Error('must not play while suspended')}}
+class Audio {constructor(){constructed++;context=this;this.state='suspended';this.currentTime=0;this.destination={}}async resume(){}createOscillator(){played++;return{frequency:{setValueAtTime(){}},connect(){},start(){},stop(){}}}createGain(){return{gain:{setValueAtTime(){},exponentialRampToValueAtTime(){}},connect(){},disconnect(){}}}createDynamicsCompressor(){return{threshold:{setValueAtTime(){}},ratio:{setValueAtTime(){}},connect(){}}}}
+const voices=3 // oscillators layered per note by the shared renderer
 const storage=new Map();audioTarget.localStorage={getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,value)};audioTarget.AudioContext=Audio;globalThis.window=audioTarget
 const{notificationSoundService:sound}=await import('../src/services/notifications/notificationSoundService.js')
 assert.equal(sound.getSettings().enabled,false);sound.initialize()
@@ -57,5 +58,15 @@ assert.equal(await sound.play('assignment'),false)
 sound.setEnabled(true);assert.equal(constructed,1)
 assert.equal(await sound.play('assignment'),false);assert.equal(played,0)
 sound.setMuted(true);assert.equal(await sound.play('assignment'),false)
+context.state='running';sound.setMuted(false)
+assert.equal(await sound.preview('new_ticket'),true)
+assert.equal(played,sound.getPattern('new_ticket').length*voices)
+assert.equal(await sound.play('new_ticket',{eventKey:'employee:notification-1'}),true)
+assert.equal(await sound.play('new_ticket',{eventKey:'employee:notification-1'}),false)
+assert.equal(played,sound.getPattern('new_ticket').length*voices*2)
+// The same notification arriving concurrently (SSE + polling + reconnect) plays exactly once; the test button uses the same renderer.
+const concurrent=await Promise.all([1,2,3].map(()=>sound.play('assignment',{eventKey:'employee:notification-2'})))
+assert.deepEqual(concurrent.filter(Boolean).length,1)
+assert.equal(played,(sound.getPattern('new_ticket').length*2+sound.getPattern('assignment').length)*voices)
 delete globalThis.window
 console.log('PASS asset/notification contracts: quantities, historical department preservation, version checks, XLSX content, recipient exclusion, BIGINT revisions, SSE/reconnect/polling, read actions, cleanup and opt-in autoplay-safe sound')
